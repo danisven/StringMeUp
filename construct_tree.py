@@ -16,13 +16,15 @@ class TaxonomyTree(object):
     nodes.dmp of a kraken2 database.
     """
 
-    def __init__(self, nodes_filename, names_filename):
-        log.info("Setting up taxonomy tree...")
+    def __init__(self, nodes_filename=None, names_filename=None):
         self.taxonomy = {}
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
         self.Node = namedtuple('Node', ['name', 'rank', 'parent', 'children'])
-        self._construct_taxonomy_tree()
+
+        if self.names_filename and self.nodes_filename:
+            log.info("Constructing taxonomy tree...")
+            self._construct_taxonomy_tree()
 
 
     def _construct_taxonomy_tree(self):
@@ -53,11 +55,19 @@ class TaxonomyTree(object):
                     node = self.Node(name=tax_name, rank=tax_rank, parent=tax_parent, children=[])
                     self.taxonomy[tax_id] = node
 
-                if tax_parent in self.taxonomy:
+                if tax_parent in taxonomy:
                     self.taxonomy[tax_parent].children.append(tax_id)
                 else:
                     parent_node = self.Node(name=taxid2name[tax_parent], rank=None, parent=None, children=[tax_id])
                     self.taxonomy[tax_parent] = parent_node
+
+
+    def get_children(self, tax_id):
+        pass
+
+
+    def get_parent(self, tax_id):
+        pass
 
 
 if __name__ == '__main__':
