@@ -11,7 +11,10 @@ log = logging.getLogger(path.basename(__file__))
 
 
 class TaxonomyTree(object):
-
+    """
+    Creates a representation of the taxonomy in the files names.dmp and
+    nodes.dmp of a kraken2 database.
+    """
 
     def __init__(self, nodes_filename, names_filename):
         log.info("Setting up taxonomy tree...")
