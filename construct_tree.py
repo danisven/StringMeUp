@@ -55,19 +55,57 @@ class TaxonomyTree(object):
                     node = self.Node(name=tax_name, rank=tax_rank, parent=tax_parent, children=[])
                     self.taxonomy[tax_id] = node
 
-                if tax_parent in taxonomy:
+                if tax_parent in self.taxonomy:
                     self.taxonomy[tax_parent].children.append(tax_id)
                 else:
                     parent_node = self.Node(name=taxid2name[tax_parent], rank=None, parent=None, children=[tax_id])
                     self.taxonomy[tax_parent] = parent_node
 
 
+    def _get_property(self, tax_id, property):
+        """
+        Internal function to fetch the value of a single property of a namedtuple in the taxonomy dictionary.
+        """
+
+        if self.taxonomy:
+            try:
+                property_value = getattr(self.taxonomy[tax_id], property)
+            except KeyError as error:
+                log.exception('Could not find tax_id={tax_id} in the taxonomy tree.'.format(tax_id=tax_id), err.message)
+                raise
+            except AttributeError as error:
+                log.exception('There is no such field ("{field}") in the namedtuple.'.format(field=property), err.message)
+                raise
+            else:
+                return property_value
+        else:
+            #TODO: handle
+            raise
+
+
     def get_children(self, tax_id):
-        pass
+        """
+        Returns the direct descending children of a tax_id (one level).
+        """
+
+        return self._get_property(tax_id, 'children')
 
 
     def get_parent(self, tax_id):
-        pass
+        """
+        Returns the parent of a tax_id.
+        """
+
+        return self._get_property(tax_id, 'parent')
+        # TODO: what happens at the root?
+
+
+    def get_rank(self, tax_id):
+        """
+        Returns the rank of a tax_id.
+        """
+
+        return self._get_property(tax_id, 'rank')
 
 
 if __name__ == '__main__':
