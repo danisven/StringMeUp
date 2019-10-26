@@ -19,10 +19,13 @@ class TaxonomyTree(object):
     """
     Creates a representation of the taxonomy in the files names.dmp and
     nodes.dmp of a kraken2 database.
+
+    Inspired by https://github.com/frallain/NCBI_taxonomy_tree.
     """
 
     def __init__(self, nodes_filename=None, names_filename=None):
         self.taxonomy = {}
+        self.byranks = {}
         self.leaves = set()
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
@@ -33,7 +36,12 @@ class TaxonomyTree(object):
 
     def construct_tree(self):
         """
-
+        Reads a names.dmp and nodes.dmp file, and constructs a taxonomy tree
+        representation:
+            {tax_id#1: Node('name', 'rank', 'parent', 'children'),
+             tax_id#2: Node('name', 'rank', 'parent', 'children'),
+             ...,
+             tax_id#N: ...}
         """
         if self.taxonomy:
             log.info('There was already a taxonomy tree, deleting the old one.')
@@ -71,8 +79,8 @@ class TaxonomyTree(object):
                         self.taxonomy[tax_id] = self.taxonomy[tax_id]._replace(rank=tax_rank, parent=tax_parent)
                     else:
                         node = self.Node(name=tax_name, rank=tax_rank, parent=tax_parent, children=[])
-                        self.leaves.add(tax_id)
                         self.taxonomy[tax_id] = node
+                        self.leaves.add(tax_id)
 
                     if tax_parent in self.taxonomy:
                         self.taxonomy[tax_parent].children.append(tax_id)
@@ -81,6 +89,13 @@ class TaxonomyTree(object):
                     else:
                         parent_node = self.Node(name=taxid2name[tax_parent], rank=None, parent=None, children=[tax_id])
                         self.taxonomy[tax_parent] = parent_node
+
+                    # Save the tax_id to it's corresponding rank set
+                    if tax_rank in self.byranks:
+                        self.byranks[tax_rank].add(tax_id)
+                    else:
+                        self.byranks[tax_rank] = set([tax_id])
+
         except FileNotFoundError:
             log.exception('Could not find the nodes file "{nodes_file}".'.format(nodes_file=self.nodes_filename))
             raise
@@ -115,10 +130,10 @@ class TaxonomyTree(object):
         Internal helper function to check that input lists are indeed lists.
         """
         try:
-            assert isinstance(tax_id_list, list)
+            assert isinstance(putative_list, list)
         except AssertionError:
             log.exception('Input must be a list. You input "{input}", of type {input_type}'.format(
-                input=tax_id_list, input_type=type(tax_id_list)))
+                input=putative_list, input_type=type(putative_list)))
             raise
 
     def get_name(self, tax_id_list):
@@ -166,21 +181,89 @@ class TaxonomyTree(object):
         For each tax_id, returns the input tax_id and the tax_ids of its
         ancestors.
         """
-        lineage = [tax_id]
-        #while
+        self._verify_list(tax_id_list)
+        lineage_dict = {}
+
+        for tax_id in tax_id_list:
+            lineage = [tax_id]
+            node = self.taxonomy[tax_id]
+
+            while node.parent:
+                lineage.append(node.parent)
+                node = self.taxonomy[node.parent]
+
+            lineage.reverse()
+            lineage_dict[tax_id] = lineage
+
+        return lineage_dict
 
     def get_clade(self, tax_id_list):
         """
         For each tax_id, returns all of the tax_ids of the clade rooted at the
         tax_id.
+
+        returns: {tax_id#1: set(all tax_ids in node),
+                  tax_id#2: set(all tax_ids in node)}
         """
+
+        self._verify_list(tax_id_list)
+        clade_dict = {}
+
+        for tax_id in tax_id_list:
+            node = self.taxonomy[tax_id]
+            children_pool = set(node.children)
+            clade = set([tax_id])
+            clade.update(children_pool)
+
+            while children_pool:
+                try:
+                    clade_taxon = children_pool.pop()
+                except KeyError:
+                    break
+                else:
+                    new_children = self.taxonomy[clade_taxon].children
+                    clade.update(new_children)
+                    children_pool.update(new_children)
+
+            clade_dict[tax_id] = clade
+
+        return clade_dict
+
+    def get_leaves(self, tax_ids=[1]):
+        """
+        Returns a {tax_id: set(leaf_taxids)} mapping of leaf node tax_ids for
+        the clades rooted at the tax_ids.
+        """
+
+        self._verify_list(tax_ids)
+        clade_dict = {}
+        if tax_ids == [1]:
+            clade_dict[1] = self.leaves
+
+        for tax_id in tax_ids:
+            clade = self.get_clade([tax_id])[tax_id]
+            clade_leaves = self.leaves.intersection(clade)
+            clade_dict[tax_id] = clade_leaves
+
+        return clade_dict
+
+    def get_clade_species(self, tax_ids):
+        """
+        For each clade rooted at the input tax_ids, return the tax_ids of the
+        species of that clade.
+        """
+        # TODO: must verify that the supplied tax_ids are at or above the rank of species
         pass
 
-    def get_leaves(self):
+    def get_clade_rank_taxids(self, tax_ids, rank):
         """
-        Returns a set containing the tax_ids of the leaf nodes of the tree.
+        For each clade rooted at the input tax_ids, return all tax_ids that
+        represent taxa at the supplied rank. For example:
+        # get_clade_rank_taxids([1], 'phylum') -- returns all phyla in the whole tree
+        # get_clade_rank_taxids([2, 9443], 'genus') -- returns all genera in the clades rooted at 'Bacteria' and 'Primates'
         """
-        return self.leaves
+        # TODO: check that the supplied tax_ids are at or above the supplied rank. Should log a warning if not.
+        return self.byranks[rank].intersection(self.get_clade(tax_ids)[tax_ids[0]])
 
     def set_taxonomy_files(self, nodes_filename, names_filename):
         log.info('Setting the nodes filename to {}'.format(nodes_filename))
