@@ -43,6 +43,11 @@ class TaxonomyTree(object):
              ...,
              tax_id#N: ...}
         """
+
+        if not (self.nodes_filename and self.names_filename):
+            log.warning('You need to supply the nodes.dmp and names.dmp files.')
+            return
+
         if self.taxonomy:
             log.info('There was already a taxonomy tree, deleting the old one.')
             self.taxonomy = {}
@@ -109,6 +114,8 @@ class TaxonomyTree(object):
     def _get_property(self, tax_id, property):
         """
         Internal function to fetch the value of a single property of a namedtuple in the taxonomy dictionary.
+        Raises an exception if tax_id does not exist in the taxonomy tree.
+        Raises an exception if the taxonomy tree isn't built yet.
         """
         if self.taxonomy:
             try:
@@ -119,11 +126,11 @@ class TaxonomyTree(object):
             except AttributeError:
                 log.exception('There is no such field ("{field}") in the namedtuple.'.format(field=property))
                 raise
-            else:
-                return property_value
         else:
             log.exception('You have not built the taxonomy tree yet.')
             raise TaxonomyTreeException('You have not built the taxonomy tree yet.')
+
+        return property_value
 
     def _verify_list(self, putative_list):
         """
@@ -176,6 +183,28 @@ class TaxonomyTree(object):
             rank_dict[tax_id] = self._get_property(tax_id, 'rank')
         return rank_dict
 
+    def get_node(self, tax_id_list):
+        """
+        Returns the node instances of the supplied tax_ids.
+        """
+        #TODO: Use this fnc in other fncs when getting nodes from self.taxonomy
+        self._verify_list(tax_id_list)
+        node_dict = {}
+
+        if self.taxonomy:
+            for tax_id in tax_id_list:
+                try:
+                    node = self.taxonomy[tax_id]
+                except KeyError:
+                    log.exception('Could not find tax_id={tax_id} in the taxonomy tree.'.format(tax_id=tax_id))
+                    raise
+                node_dict[tax_id] = node
+        else:
+            log.exception('You have not built the taxonomy tree yet.')
+            raise TaxonomyTreeException('You have not built the taxonomy tree yet.')
+
+        return node_dict
+
     def get_lineage(self, tax_id_list):
         """
         For each tax_id, returns the input tax_id and the tax_ids of its
@@ -186,11 +215,11 @@ class TaxonomyTree(object):
 
         for tax_id in tax_id_list:
             lineage = [tax_id]
-            node = self.taxonomy[tax_id]
+            node = self.get_node([tax_id])[tax_id]
 
             while node.parent:
                 lineage.append(node.parent)
-                node = self.taxonomy[node.parent]
+                node = self.get_node([node.parent])[node.parent]
 
             lineage.reverse()
             lineage_dict[tax_id] = lineage
@@ -210,7 +239,7 @@ class TaxonomyTree(object):
         clade_dict = {}
 
         for tax_id in tax_id_list:
-            node = self.taxonomy[tax_id]
+            node = self.get_node([tax_id])[tax_id]
             children_pool = set(node.children)
             clade = set([tax_id])
             clade.update(children_pool)
@@ -221,7 +250,7 @@ class TaxonomyTree(object):
                 except KeyError:
                     break
                 else:
-                    new_children = self.taxonomy[clade_taxon].children
+                    new_children = self.get_node([clade_taxon])[clade_taxon].children
                     clade.update(new_children)
                     children_pool.update(new_children)
 
@@ -247,14 +276,6 @@ class TaxonomyTree(object):
 
         return clade_dict
 
-    def get_clade_species(self, tax_ids):
-        """
-        For each clade rooted at the input tax_ids, return the tax_ids of the
-        species of that clade.
-        """
-        # TODO: must verify that the supplied tax_ids are at or above the rank of species
-        pass
-
     def get_clade_rank_taxids(self, tax_ids, rank):
         """
         For each clade rooted at the input tax_ids, return all tax_ids that
@@ -262,8 +283,20 @@ class TaxonomyTree(object):
         # get_clade_rank_taxids([1], 'phylum') -- returns all phyla in the whole tree
         # get_clade_rank_taxids([2, 9443], 'genus') -- returns all genera in the clades rooted at 'Bacteria' and 'Primates'
         """
-        # TODO: check that the supplied tax_ids are at or above the supplied rank. Should log a warning if not.
-        return self.byranks[rank].intersection(self.get_clade(tax_ids)[tax_ids[0]])
+        self._verify_list(tax_ids)
+        clade_dict = {}
+        for tax_id in tax_ids:
+            clade = self.get_clade([tax_id])[tax_id]
+            clade_rank_taxids = None
+
+            try:
+                clade_rank_taxids = clade.intersection(self.byranks[rank])
+            except KeyError:
+                log.warning('No such rank: {rank}.'.format(rank=rank))
+
+            clade_dict[tax_id] = clade_rank_taxids
+
+        return clade_dict
 
     def set_taxonomy_files(self, nodes_filename, names_filename):
         log.info('Setting the nodes filename to {}'.format(nodes_filename))
