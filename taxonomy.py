@@ -49,14 +49,14 @@ class TaxonomyTree(object):
             return
 
         if self.taxonomy:
-            log.info('There was already a taxonomy tree, deleting the old one.')
+            log.warning('There was already a taxonomy tree, deleting the old one.')
             self.taxonomy = {}
 
         log.info("Constructing taxonomy tree...")
         taxid2name = {}
 
         try:
-            log.info("Mapping taxonomic ID to scientific names from {names_file}...".format(names_file=self.names_filename))
+            log.info('Mapping taxonomic ID to scientific names from "{names_file}"...'.format(names_file=self.names_filename))
             with open(self.names_filename, 'r') as f:
                 for name_line in f:
                     name_info = name_line.split('|')
@@ -70,7 +70,7 @@ class TaxonomyTree(object):
             raise
 
         try:
-            log.info("Reading taxonomy from {nodes_file}...".format(nodes_file=self.nodes_filename))
+            log.info('Reading taxonomy from "{nodes_file}"...'.format(nodes_file=self.nodes_filename))
             with open(self.nodes_filename, 'r') as f:
                 for tax_line in f:
                     tax_info = tax_line.split('|')[0:3]
