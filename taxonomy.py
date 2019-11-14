@@ -3,6 +3,8 @@
 import argparse
 import logging
 import sys
+import pickle
+import datetime
 from collections import namedtuple
 from os import path
 
@@ -10,6 +12,8 @@ logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 log = logging.getLogger(path.basename(__file__))
 
 # TODO: make it possible to use scientific names in the same way as tax_id
+
+Node = namedtuple('Node', ['name', 'rank', 'parent', 'children'])
 
 class TaxonomyTreeException(Exception):
     pass
@@ -23,16 +27,77 @@ class TaxonomyTree(object):
     Inspired by https://github.com/frallain/NCBI_taxonomy_tree.
     """
 
-    def __init__(self, nodes_filename=None, names_filename=None):
+    def __init__(self, nodes_filename=None, names_filename=None, pickled_taxonomy_filename=None):
         self.taxonomy = {}
         self.byranks = {}
         self.leaves = set()
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
-        self.Node = namedtuple('Node', ['name', 'rank', 'parent', 'children'])
+        self.pickled_taxonomy_filename = pickled_taxonomy_filename
+        #self.Node = namedtuple('Node', ['name', 'rank', 'parent', 'children'])
 
-        if self.names_filename and self.nodes_filename:
+        if self.pickled_taxonomy_filename and (self.nodes_filename or self.names_filename):
+            raise TaxonomyTreeException('You cannot combine nodes and names dump files with a pickled taxonomy file.')
+        elif self.pickled_taxonomy_filename:
+            self.read_pickled_taxonomy()
+        elif self.nodes_filename and self.names_filename:
             self.construct_tree()
+        else:
+            pass
+
+    def read_pickled_taxonomy(self, pickled_taxonomy_filename=None):
+        """
+        Reads a pickled taxonomy file and stores the taxonomy in self.taxonomy.
+        """
+        if not (self.pickled_taxonomy_filename or pickled_taxonomy_filename):
+            raise TaxonomyTreeException('You tried to read a pickled taxonomy but didn\'t supply a filename.')
+        pickle_file = pickled_taxonomy_filename if pickled_taxonomy_filename else self.pickled_taxonomy_filename
+
+        try:
+            log.info('Attempting to read pickled taxonomy from "{taxonomy_file}"...'.format(taxonomy_file=pickle_file))
+            with open(pickle_file, 'rb') as f:
+                taxonomy = pickle.load(f)
+        except FileNotFoundError:
+            log.exception('Could not find the pickled file "{taxonomy_file}".'.format(taxonomy_file=pickle_file))
+            raise
+        except:
+            log.exception('There was an error when reading the pickled taxonomy file.')
+            raise
+
+        timestamp = taxonomy['timestamp']
+        nodes_file = taxonomy['nodes_filename']
+        names_file = taxonomy['names_filename']
+
+        # TODO: perform some checks on the taxonomy to assert it is OK
+
+        log.info('This taxonomy was created at timepoint {ts}.'.format(ts=timestamp.strftime("%Y-%m-%d %H:%M:%S")))
+        log.info('This taxonomy was created from the nodes dump file "{nodes_filename}".'.format(nodes_filename=nodes_file))
+        log.info('This taxonomy was created from the names dump file "{names_filename}".'.format(names_filename=names_file))
+        self.taxonomy = taxonomy
+        log.info('Done reading pickled taxonomy file.')
+
+    def save_taxonomy(self, pickle_filename):
+        """
+        Stores the contents of self.taxonomy in a pickled file for later use.
+
+        The pickled file can be read by an instance of TaxonomyTree instead of
+        parsing names and nodes dump files.
+        """
+        log.info('Attempting to pickle the taxonomy to "{filename}".'.format(filename=pickle_filename))
+
+        if not self.taxonomy:
+            log.warning('NOTHING SAVED! There is no taxonomy to pickle. Returning.')
+            return
+
+        if path.isfile(pickle_filename):
+            log.warning('NOTHING SAVED! A file with that name already exists ({filename}). Returning.'.format(filename=pickle_filename))
+            return
+
+        with open(pickle_filename, 'wb') as f:
+            pickle.dump(self.taxonomy, f)
+
+        log.info('Done pickling the taxonomy.')
+
 
     def construct_tree(self):
         """
@@ -57,6 +122,7 @@ class TaxonomyTree(object):
 
         try:
             log.info('Mapping taxonomic ID to scientific names from "{names_file}"...'.format(names_file=self.names_filename))
+            # TODO: check so that names.dmp conforms to expected format
             with open(self.names_filename, 'r') as f:
                 for name_line in f:
                     name_info = name_line.split('|')
@@ -71,6 +137,7 @@ class TaxonomyTree(object):
 
         try:
             log.info('Reading taxonomy from "{nodes_file}"...'.format(nodes_file=self.nodes_filename))
+            # TODO: check so that nodes.dmp conforms to expected format
             with open(self.nodes_filename, 'r') as f:
                 for tax_line in f:
                     tax_info = tax_line.split('|')[0:3]
@@ -83,7 +150,7 @@ class TaxonomyTree(object):
                         # We already inserted the current tax_id as a parent of another
                         self.taxonomy[tax_id] = self.taxonomy[tax_id]._replace(rank=tax_rank, parent=tax_parent)
                     else:
-                        node = self.Node(name=tax_name, rank=tax_rank, parent=tax_parent, children=[])
+                        node = Node(name=tax_name, rank=tax_rank, parent=tax_parent, children=[])
                         self.taxonomy[tax_id] = node
                         self.leaves.add(tax_id)
 
@@ -92,7 +159,7 @@ class TaxonomyTree(object):
                         if tax_parent in self.leaves:
                             self.leaves.remove(tax_parent)
                     else:
-                        parent_node = self.Node(name=taxid2name[tax_parent], rank=None, parent=None, children=[tax_id])
+                        parent_node = Node(name=taxid2name[tax_parent], rank=None, parent=None, children=[tax_id])
                         self.taxonomy[tax_parent] = parent_node
 
                     # Save the tax_id to it's corresponding rank set
@@ -109,6 +176,9 @@ class TaxonomyTree(object):
         root_children = self.taxonomy[1].children
         root_children.remove(1)
         self.taxonomy[1] = self.taxonomy[1]._replace(parent=None, children=root_children)
+        self.taxonomy['timestamp'] = datetime.datetime.now()
+        self.taxonomy['nodes_filename'] = path.abspath(self.nodes_filename)
+        self.taxonomy['names_filename'] = path.abspath(self.names_filename)
         log.info("Taxonomy tree built.")
 
     def _get_property(self, tax_id, property):

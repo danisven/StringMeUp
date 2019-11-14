@@ -1,2 +1,4 @@
-nodes.dmp
-names.dmp
+*.dmp
+*.pickle
+*.kraken2
+__pycache__/

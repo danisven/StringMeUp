@@ -4,7 +4,6 @@ import argparse
 import logging
 import sys
 import taxonomy
-import datetime
 from os import path
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
@@ -13,6 +12,7 @@ log = logging.getLogger(path.basename(__file__))
 # TODO: supply more than one confidence threshold at the same time: $ python confidence_threshold.py 0.01 0.1 0.15 /path/to/file
 # TODO: make sure confidence_threshold is between 0 and 1
 # TODO: be able to reclassify 'U' reads
+# TODO: keep track of the number of reads at each taxon (after reclassification), so we can print a new report file more easily
 
 # Arguments
 parser = argparse.ArgumentParser(
@@ -46,10 +46,6 @@ parser.add_argument(
     type=str,
     action='store')
 args = parser.parse_args()
-
-
-def timestamp():
-    ts = datetime.datetime.now()
 
 
 def validate_input_file(putative_classifications_file):
@@ -120,38 +116,53 @@ def process_kmer_string(kmer_info_string):
     return taxa_kmer_dict
 
 
+def calc_confidence(current_tax_id, taxa_kmer_dict, taxonomy_tree):
+    pass
+
+
 def reclassify(classified_tax_id, taxa_kmer_dict, confidence_threshold, taxonomy_tree):
     """
     """
     current_node = classified_tax_id
-    descendant_taxa = set()
+    confidence_reached = False
+    taxa_lineages = {}
+
+    # The total number of assigned kmers (non-ambiguous):
+    total_kmer_hits = sum(taxa_kmer_dict.values())
 
     # Only interested in tax_ids that are in the database. A '0' signifies that
     # the kmer could not be assigned to any tax_id.
     assigned_taxa_set = set([tax_id for tax_id in taxa_kmer_dict.keys() if tax_id != 0])
+    print(assigned_taxa_set)
+    while not confidence_reached:
+        descendant_taxa = set()
 
-    for tax_id in assigned_taxa_set:
-        # TODO: Implement a 'is_descendant' fnd in taxonomy.py. Should return True as soon as the supplied tax_id is found in the upwards search. Should cut some time.
-        lineage = taxonomy_tree.get_lineage([tax_id])[tax_id]
-        if current_node in lineage:
-            descendant_taxa.add(tax_id)
+        for tax_id in assigned_taxa_set:
+            # TODO: Implement a 'is_descendant' fnc in taxonomy.py. Should return True as soon as the supplied tax_id is found in the upwards search. Should cut some time.
+            lineage = taxa_lineages[tax_id] if taxa_lineages else taxonomy_tree.get_lineage([tax_id])[tax_id]
+            if current_node in lineage:
+                descendant_taxa.add(tax_id)
 
-    # Get the clade rooted at the tax_id that the read pair was assigned to:
-    #clade_ids = taxonomy_tree.get_clade([current_node])[current_node]
+        # Sum the number of kmers that are assigned to any tax_id in the clade:
+        num_hits_within_clade = sum([taxa_kmer_dict[tax_id] for tax_id in descendant_taxa])
 
-    # Get the overlap between tax_ids in the clade and that any kmers were
-    # assigned to:
-    # classified_clade_tax_ids = clade_ids.intersection(taxa_kmer_dict.keys())
+        # The confidence value for the read pair classification at the current
+        # taxonomic level:
+        confidence = num_hits_within_clade / total_kmer_hits
 
-    # Sum the number of kmers that are assigned to any tax_id in the clade:
-    num_hits_within_clade = sum([taxa_kmer_dict[tax_id] for tax_id in descendant_taxa])
+        # If the confidence at this node is sufficient, we classify it to
+        # the current node (TaxID).
+        if confidence >= confidence_threshold:
+            return (current_node, confidence)
 
-    # The total number of assigned kmers (non-ambiguous):
-    total_kmer_hits = sum(taxa_kmer_dict.values())  # no need to calculate this again
+        # Otherwise, set the current_node to the parent and keep going.
+        else:
+            current_node = taxonomy_tree.get_parent([current_node])[current_node]
 
-    # The confidence value for the read pair classification at the current
-    # taxonomic level:
-    confidence = num_hits_within_clade / total_kmer_hits
+            # If the next level is root, we shouldn't keep going.
+            # The read pair is unclassified.
+            if current_node == 1:
+                return False
 
     # TODO: keep going up the taxonomy if the confidence score was not ok
     #print(confidence)
@@ -170,13 +181,13 @@ if __name__ == '__main__':
             read_pair_proc = read_pair.strip()
             read_pair_proc = read_pair_proc.split('\t')
             if read_pair_proc[0] == 'U':
-                continue
+                continue  # consider changing to read_pair.startswith('U') and put it first
             classified_tax_id = int(read_pair_proc[2])
             kmer_info_string = read_pair_proc[-1]
             taxa_kmer_dict = process_kmer_string(kmer_info_string)
             # TODO: taxa_kmer_dict can be empty if all kmer hits are ambiguous
             reclassify(classified_tax_id, taxa_kmer_dict, args.confidence_threshold, taxonomy_tree)
             i += 1
-            if i % 10000 == 0:
+            if i % 1000000 == 0:
                 print(i)
             # sys.exit()
