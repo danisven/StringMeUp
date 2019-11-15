@@ -31,12 +31,10 @@ parser.add_argument(
     help='Path to the Kraken 2 output file containing the individual read classifications.')
 parser.add_argument(
     '--names',
-    metavar='taxonomy names'
-)
+    metavar='taxonomy names')
 parser.add_argument(
     '--nodes',
-    metavar='taxonomy nodes'
-)
+    metavar='taxonomy nodes')
 parser.add_argument(
     '--output_report',
     type=str,
@@ -127,19 +125,28 @@ def reclassify(classified_tax_id, taxa_kmer_dict, confidence_threshold, taxonomy
     confidence_reached = False
     taxa_lineages = {}
 
-    # The total number of assigned kmers (non-ambiguous):
+    # The total number of kmers that were interrogated against the database (non-ambiguous):
     total_kmer_hits = sum(taxa_kmer_dict.values())
 
     # Only interested in tax_ids that are in the database. A '0' signifies that
-    # the kmer could not be assigned to any tax_id.
+    # the kmer could not be assigned to any tax_id (missing from database).
     assigned_taxa_set = set([tax_id for tax_id in taxa_kmer_dict.keys() if tax_id != 0])
-    print(assigned_taxa_set)
+
     while not confidence_reached:
-        descendant_taxa = set()
+        descendant_taxa = set()  # will contain all descentants to the tax_id that the read is classified to
 
         for tax_id in assigned_taxa_set:
-            # TODO: Implement a 'is_descendant' fnc in taxonomy.py. Should return True as soon as the supplied tax_id is found in the upwards search. Should cut some time.
-            lineage = taxa_lineages[tax_id] if taxa_lineages else taxonomy_tree.get_lineage([tax_id])[tax_id]
+            if tax_id in taxa_lineages:
+                lineage = taxa_lineages[tax_id]
+            else:
+                lineage = taxonomy_tree.get_lineage([tax_id])[tax_id]
+
+                # Save lineage so we don't have to get it from taxonomy_tree more than once:
+                taxa_lineages[tax_id] = lineage
+
+            # If the classified taxa is in the lineage (parents) of tax_id,
+            # then tax_id must be in the clade rooted at current_node - i.e.
+            # tax_id is a descendant of current_node.
             if current_node in lineage:
                 descendant_taxa.add(tax_id)
 

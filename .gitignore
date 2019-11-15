@@ -2,3 +2,4 @@
 *.pickle
 *.kraken2
 __pycache__/
+CL2_kraken2*
