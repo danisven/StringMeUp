@@ -19,7 +19,7 @@ log = logging.getLogger(path.basename(__file__))
 # Arguments
 parser = argparse.ArgumentParser(
     prog='Confidence score reclassification',
-    usage='confidence_recal [--names --nodes | --taxonomy_file] [--output_report] [--output_classifications] [--keep_unclassified] [--verbose_output] [--help] confidence classifications',
+    usage='confidence_recal [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--verbose_output <FILE>] [--keep_unclassified] [--help] confidence classifications',
     description='Reclassification of reads (Kraken 2) by confidence score.')
 parser.add_argument(
     'confidence_threshold',
