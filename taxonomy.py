@@ -14,6 +14,20 @@ log = logging.getLogger(path.basename(__file__))
 # TODO: make it possible to use scientific names in the same way as tax_id
 
 Node = namedtuple('Node', ['name', 'rank', 'parent', 'children'])
+Rank = namedtuple('Rank', ['rank_name', 'rank_code', 'rank_depth'])
+
+# Using the same rank codes as Kraken 2 (https://github.com/DerrickWood/kraken2/blob/master/src/reports.cc)
+translate_rank2code = {
+    'superkingdom': 'D',
+    'kingdom': 'K',
+    'phylum': 'P',
+    'class': 'C',
+    'order': 'O',
+    'family': 'F',
+    'genus': 'G',
+    'species': 'S'
+}
+
 
 class TaxonomyTreeException(Exception):
     pass
@@ -34,7 +48,6 @@ class TaxonomyTree(object):
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
         self.pickled_taxonomy_filename = pickled_taxonomy_filename
-        #self.Node = namedtuple('Node', ['name', 'rank', 'parent', 'children'])
 
         if self.pickled_taxonomy_filename and (self.nodes_filename or self.names_filename):
             raise TaxonomyTreeException('You cannot combine nodes and names dump files with a pickled taxonomy file.')
@@ -172,7 +185,7 @@ class TaxonomyTree(object):
             log.exception('Could not find the nodes file "{nodes_file}".'.format(nodes_file=self.nodes_filename))
             raise
 
-        # Adjust the root
+        # Adjust the root (the root is tax_id=1, and its parent is also tax_id=1)
         root_children = self.taxonomy[1].children
         root_children.remove(1)
         self.taxonomy[1] = self.taxonomy[1]._replace(parent=None, children=root_children)
@@ -243,6 +256,26 @@ class TaxonomyTree(object):
             parent_dict[tax_id] = self._get_property(tax_id, 'parent')
         return parent_dict
 
+    def get_distance(self, tax_id_ancestor, tax_id):
+        """
+        Find the distance (number of steps) between the
+        ancestor (tax_id_ancestor) and the taxon (tax_id).
+        """
+        lineage = self.get_lineage([tax_id])[tax_id]
+        try:
+            assert tax_id_ancestor in lineage
+        except AssertionError:
+            log.exception('tax_id {ancestor} is not an ancestor of {tax_id}.'.format(
+                ancestor=tax_id_ancestor, tax_id=tax_id))
+            raise
+
+        ancestor_index = lineage.index(tax_id_ancestor)
+        tax_id_index = lineage.index(tax_id)
+        distance = tax_id_index - ancestor_index
+
+        return distance
+
+
     def get_rank(self, tax_id_list):
         """
         Returns the rank of each tax_id.
@@ -252,6 +285,50 @@ class TaxonomyTree(object):
         for tax_id in tax_id_list:
             rank_dict[tax_id] = self._get_property(tax_id, 'rank')
         return rank_dict
+
+    def get_rank_code(self, tax_id_list):
+        """
+        Returns the rank, rank code, and rank offset for each tax_id.
+        For example:
+        tax_id 314295 is rank 'superfamily'. That rank has no rank code in the
+        original Kraken 2 reports (see translate_rank2code dict above). Same
+        goes for all of the 'no rank' tax_ids. Instead, 314295 is considered to
+        be an 'order' but at the depth of 4, i.e. 4 steps down from the tax_id
+        of rank 'order' that is closes above it in the lineage. The rank code
+        is therefore O, and the depth is 4. So the full rank code is O4.
+
+        Returns a dict of namedtupes, one for each tax_id in the supplied list.
+        """
+        rank_dict = self.get_rank(tax_id_list)
+        rank_code_dict = {}
+        for tax_id in rank_dict:
+            rank = rank_dict[tax_id]
+            rank_code = ''
+            current_node = tax_id
+
+            # Find the rank code for this node or the one above
+            while not rank_code:
+                if rank in translate_rank2code:
+                    rank_code = translate_rank2code[rank]
+                elif current_node == 1:
+                    # Special case for root, as it has rank 'no rank'
+                    rank_code = 'R'
+                else:
+                    current_node = self.get_parent([current_node])[current_node]
+                    rank = self.get_rank([current_node])[current_node]
+
+            rank_depth = self.get_distance(current_node, tax_id)
+            rank_name = self.get_rank([tax_id])[tax_id]
+
+            rank_tuple = Rank(
+                rank_name=rank_name,
+                rank_code=rank_code,
+                rank_depth=rank_depth)
+
+            rank_code_dict[tax_id] = rank_tuple
+
+        return rank_code_dict
+
 
     def get_node(self, tax_id_list):
         """
@@ -336,13 +413,15 @@ class TaxonomyTree(object):
 
         self._verify_list(tax_ids)
         clade_dict = {}
+
         if tax_ids == [1]:
             clade_dict[1] = self.leaves
 
-        for tax_id in tax_ids:
-            clade = self.get_clade([tax_id])[tax_id]
-            clade_leaves = self.leaves.intersection(clade)
-            clade_dict[tax_id] = clade_leaves
+        else:
+            for tax_id in tax_ids:
+                clade = self.get_clade([tax_id])[tax_id]
+                clade_leaves = self.leaves.intersection(clade)
+                clade_dict[tax_id] = clade_leaves
 
         return clade_dict
 
@@ -353,8 +432,10 @@ class TaxonomyTree(object):
         # get_clade_rank_taxids([1], 'phylum') -- returns all phyla in the whole tree
         # get_clade_rank_taxids([2, 9443], 'genus') -- returns all genera in the clades rooted at 'Bacteria' and 'Primates'
         """
+
         self._verify_list(tax_ids)
         clade_dict = {}
+
         for tax_id in tax_ids:
             clade = self.get_clade([tax_id])[tax_id]
             clade_rank_taxids = None
