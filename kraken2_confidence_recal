@@ -451,7 +451,7 @@ def make_kraken2_report(tax_reads, taxonomy_tree, total_reads):
             sys.stdout.write(report_row + '\n')
 
 
-def get_verbose_output(read, original_read_row, taxonomy_tree):
+def get_verbose_output(read, taxonomy_tree):
     """
     Gets more information about the reclassification of a read. This is for
     the verbose_output option.
@@ -461,9 +461,6 @@ def get_verbose_output(read, original_read_row, taxonomy_tree):
     # Variable renaming to make things more readable
     new_taxid = read.reclassified_taxid
     old_tax_id = read.original_taxid
-
-    # The read id
-    read.id = original_read_row[1]
 
     # Stuff that is conditional if we have a classified read or not.
     # TaxonomyTree doesn't cope with tax_id=0
@@ -550,6 +547,11 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=N
                 args.confidence_threshold,
                 taxonomy_tree)
 
+            # Add some more info to the read:
+            read.id = read_pair_proc[1]
+            read.length = read_pair_proc[3]
+            read.kmer_string = read_pair_proc[4]
+
             # Counter for number of reads per taxon/node
             if read.reclassified_taxid in tax_reads_dict['hits_at_node']:
                 tax_reads_dict['hits_at_node'][read.reclassified_taxid] += 1
@@ -563,7 +565,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=N
 
             # Write verbose output about the reclassification
             if v_handle:
-                read = get_verbose_output(read, read_pair_proc, taxonomy_tree)
+                read = get_verbose_output(read, taxonomy_tree)
                 write_verbose_output(read)
 
         else:
