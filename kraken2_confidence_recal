@@ -239,7 +239,6 @@ def reclassify_read(read, confidence_threshold, taxonomy_tree):
             if doomed_to_fail:
                 read.recalculated_conf = max_confidence
                 read.reclassified_taxid = 0
-                print("aborting read classification")
                 return read
 
         # If the confidence at this node is sufficient, we classify it to
