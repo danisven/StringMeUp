@@ -195,6 +195,17 @@ def reclassify_read(read, confidence_threshold, taxonomy_tree):
     # the kmer could not be assigned to any tax_id (missing from database).
     assigned_taxa_set = set([tax_id for tax_id in taxa_kmer_dict.keys() if tax_id != 0])
 
+    # Make a quick check to see if it is even possible to obtain the confidence
+    # needed to make a classification. If it isn't we don't have to go through
+    # the hassle of calculating the confidence at all parent nodes. Potentially
+    # saving us a lot of time.
+    doomed_to_fail = False
+    total_hits = sum(taxa_kmer_dict[tax_id] for tax_id in assigned_taxa_set)
+    max_confidence = total_hits / total_kmer_hits
+    if max_confidence < confidence_threshold:
+        # The read can't achieve a confidence high enough, so we mark it
+        doomed_to_fail = True
+
     while not read.classified:
         descendant_taxa = set()  # will contain all descentants to the tax_id that the read is classified to
 
@@ -221,6 +232,15 @@ def reclassify_read(read, confidence_threshold, taxonomy_tree):
         read.recalculated_conf = num_hits_within_clade / total_kmer_hits
         if not read.original_conf:
             read.original_conf = read.recalculated_conf
+
+            # If this read can't reach classification at the given confidence
+            # cutoff, this is the time to jump out of the loop (as we have
+            # calculated the original confidence now).
+            if doomed_to_fail:
+                read.recalculated_conf = max_confidence
+                read.reclassified_taxid = 0
+                print("aborting read classification")
+                return read
 
         # If the confidence at this node is sufficient, we classify it to
         # the current node (TaxID).
