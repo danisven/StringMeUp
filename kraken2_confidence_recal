@@ -69,7 +69,7 @@ if args.names and args.nodes is None:
     parser.error("--names requires --nodes to be set as well.")
 
 taxa_lineages = {}
-
+report_frequency = 10000000  # Will output progress every nth read
 
 @dataclass
 class ReadClassification:
@@ -169,7 +169,7 @@ def process_kmer_string(kmer_info_string):
     return taxa_kmer_dict
 
 
-def reclassify_read(classified_tax_id, taxa_kmer_dict, confidence_threshold, taxonomy_tree):
+def reclassify_read(read, confidence_threshold, taxonomy_tree):
     """
     Sums the number of kmers that hit in the clade rooted at "current_node",
     and divides it with the total number of kmers queried against the database:
@@ -182,10 +182,11 @@ def reclassify_read(classified_tax_id, taxa_kmer_dict, confidence_threshold, tax
     In this function it's envisionable to include other parameters for the
     classification... Right now I'm only considering the confidence score.
     """
+    # Process the kmer string into a dict of {tax_id: #kmers} key, value pairs
+    taxa_kmer_dict = process_kmer_string(read.kmer_string)
 
-    read = ReadClassification(
-        original_taxid=classified_tax_id,
-        current_node=classified_tax_id)
+    # Make the current node the same as the original classification
+    read.current_node = read.original_taxid
 
     # The total number of kmers that were interrogated against the database (non-ambiguous):
     total_kmer_hits = sum(taxa_kmer_dict.values())
@@ -258,7 +259,7 @@ def read_kraken_output():
                 else:
                     tax_dict['hits_at_node'][tax_id] += 1
             i += 1
-            if i % 1000000 == 0:
+            if i % report_frequency == 0:
                 print('Processed {} lines'.format(i))
 
 
@@ -493,6 +494,26 @@ def get_verbose_output(read, taxonomy_tree):
     return read
 
 
+def create_read(kraken2_read):
+    """
+    Creates an instance of ReadClassification dataclass, that holds
+    information about the read and its classification.
+    """
+    # Process the read string so that its elements go into a list
+    read_pair_proc = kraken2_read.strip()
+    read_pair_proc = read_pair_proc.split('\t')
+
+    # Create the read object
+    read = ReadClassification(
+        original_taxid = int(read_pair_proc[2]),
+        id = read_pair_proc[1],
+        length = read_pair_proc[3],
+        kmer_string = read_pair_proc[-1]
+    )
+
+    return read
+
+
 def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=None):
     """
     f_handle: classifications input file to read from.
@@ -512,8 +533,10 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=N
         o.write(row_string)
 
     def write_verbose_output(read):
+        # read is an instance of ReadClassification
         row_items = [
             read.id,
+            read.length,
             read.reclassified_distance,
             read.original_taxid,
             read.reclassified_taxid,
@@ -522,7 +545,8 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=N
             read.original_rank_code,
             read.reclassified_rank_code,
             read.original_name,
-            read.reclassified_name]
+            read.reclassified_name,
+            read.kmer_string]
 
         row_string = '\t'.join([str(x) for x in row_items]) + '\n'
         v.write(row_string)
@@ -533,24 +557,16 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=N
 
         # Only working with classified reads:
         if read_pair.startswith('C'):
-            read_pair_proc = read_pair.strip()
-            read_pair_proc = read_pair_proc.split('\t')
 
-            classified_tax_id = int(read_pair_proc[2])
-            kmer_info_string = read_pair_proc[-1]
-            taxa_kmer_dict = process_kmer_string(kmer_info_string)
+            # Make an instance of ReadClassification to hold information
+            # about the read and its classification
+            read = create_read(read_pair)
 
             # Reclassify the read pair based on confidence
             read = reclassify_read(
-                classified_tax_id,
-                taxa_kmer_dict,
+                read,
                 args.confidence_threshold,
                 taxonomy_tree)
-
-            # Add some more info to the read:
-            read.id = read_pair_proc[1]
-            read.length = read_pair_proc[3]
-            read.kmer_string = read_pair_proc[4]
 
             # Counter for number of reads per taxon/node
             if read.reclassified_taxid in tax_reads_dict['hits_at_node']:
@@ -575,7 +591,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=N
 
         # Keep track of progress
         i += 1
-        if i % 10000000 == 0:
+        if i % report_frequency == 0:
             log.info('Processed {} reads...'.format(i))
 
     log.info('Done processing reads. They were {} in total.'.format(i))
