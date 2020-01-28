@@ -8,7 +8,6 @@ import datetime
 from collections import namedtuple
 from os import path
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 log = logging.getLogger(path.basename(__file__))
 
 # TODO: make it possible to use scientific names in the same way as tax_id

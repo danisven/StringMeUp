@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
-import logging
-import sys
 import taxonomy
 import operator
-from os import path
+import logging
+import sys
 from dataclasses import dataclass
+from os import path
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d [%H:%M:%S]')
 log = logging.getLogger(path.basename(__file__))
 
 # TODO: supply more than one confidence threshold at the same time: $ python confidence_threshold.py 0.01 0.1 0.15 /path/to/file
