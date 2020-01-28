@@ -19,7 +19,7 @@ log = logging.getLogger(path.basename(__file__))
 # Arguments
 parser = argparse.ArgumentParser(
     prog='Confidence score reclassification',
-    usage='confidence_recal [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--verbose_output <FILE>] [--keep_unclassified] [--help] confidence classifications',
+    usage='confidence_recal [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--output_verbose <FILE>] [--keep_unclassified] [--help] confidence classifications',
     description='Reclassification of reads (Kraken 2) by confidence score.')
 parser.add_argument(
     'confidence_threshold',
@@ -46,7 +46,7 @@ parser.add_argument(
     action='store_true',
     help='Specify if you want to output unclassified reads in addition to classified reads. NOTE(!): This script will always discard reads that are unclassified in the classifications input file, this flag will just make sure to keep previously calssified reads even if they are reclassified as unclassified by this script. TIP(!): Always run Kraken2 with no confidence cutoff.')
 parser.add_argument(
-    '--verbose_output',
+    '--output_verbose',
     metavar='FILE',
     type=str,
     help='File to send verbose output to. This file will contain, for each read, (1) original classification, (2) new classification, (3) original confidence, (4), new confidence (5), original taxa name (6), new taxa name, (7) original rank, (8) new rank, (9) distance travelled (how many nodes was it lifted upwards in the taxonomy).')
@@ -474,7 +474,7 @@ def make_kraken2_report(tax_reads, taxonomy_tree, total_reads):
 def get_verbose_output(read, taxonomy_tree):
     """
     Gets more information about the reclassification of a read. This is for
-    the verbose_output option.
+    the output_verbose option.
 
     read is an instance of ReadClassification.
     """
@@ -537,7 +537,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, o_handle=None, v_handle=N
     """
     f_handle: classifications input file to read from.
     o_handle: output_classifications file to write to.
-    v_handle: verbose_output file to write to.
+    v_handle: output_verbose file to write to.
     """
     def write_read_output(read):
         # read is an instance of ReadClassification
@@ -645,9 +645,9 @@ if __name__ == '__main__':
             o = open(args.output_classifications, 'w')
 
         # If user wants to save the verbose classification output to file, open file
-        if args.verbose_output:
-            log.info('Saving verbose classification information in {}.'.format(args.verbose_output))
-            v = open(args.verbose_output, 'w')
+        if args.output_verbose:
+            log.info('Saving verbose classification information in {}.'.format(args.output_verbose))
+            v = open(args.output_verbose, 'w')
 
         # Run the main loop (reclassification)
         main_loop(f, tax_reads_dict, taxonomy_tree, o, v)
