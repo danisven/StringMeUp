@@ -2,17 +2,28 @@
 
 import argparse
 import logging
-import sys
 import pickle
 import datetime
 from collections import namedtuple
+from dataclasses import dataclass, field
 from os import path
 
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d [%H:%M:%S]')
 log = logging.getLogger(path.basename(__file__))
 
 # TODO: make it possible to use scientific names in the same way as tax_id
+@dataclass
+class Node:
+    name: str = None
+    genbank_common_name: str = None
+    rank: str = None
+    parent: int = None
+    children: list = field(default_factory=list)
 
-Node = namedtuple('Node', ['name', 'rank', 'parent', 'children'])
+
 Rank = namedtuple('Rank', ['rank_name', 'rank_code', 'rank_depth'])
 
 # Using the same rank codes as Kraken 2 (https://github.com/DerrickWood/kraken2/blob/master/src/reports.cc)
@@ -47,6 +58,7 @@ class TaxonomyTree(object):
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
         self.pickled_taxonomy_filename = pickled_taxonomy_filename
+        self.wanted_name_types = set(['scientific name', 'genbank common name'])
 
         if self.pickled_taxonomy_filename and (self.nodes_filename or self.names_filename):
             raise TaxonomyTreeException('You cannot combine nodes and names dump files with a pickled taxonomy file.')
@@ -115,8 +127,8 @@ class TaxonomyTree(object):
         """
         Reads a names.dmp and nodes.dmp file, and constructs a taxonomy tree
         representation:
-            {tax_id#1: Node('name', 'rank', 'parent', 'children'),
-             tax_id#2: Node('name', 'rank', 'parent', 'children'),
+            {tax_id#1: Node('name', 'genbank_common_name', 'rank', 'parent', 'children'),
+             tax_id#2: Node('name', 'genbank_common_name', 'rank', 'parent', 'children'),
              ...,
              tax_id#N: ...}
         """
@@ -133,16 +145,38 @@ class TaxonomyTree(object):
         taxid2name = {}
 
         try:
-            log.info('Mapping taxonomic ID to scientific names from "{names_file}"...'.format(names_file=self.names_filename))
+            log.info('Mapping taxonomic ID to scientific and genbank common names from "{names_file}"...'.format(names_file=self.names_filename))
             # TODO: check so that names.dmp conforms to expected format
             with open(self.names_filename, 'r') as f:
                 for name_line in f:
                     name_info = name_line.split('|')
                     name_type = name_info[3].strip()
+                    if name_type not in self.wanted_name_types:
+                        continue
+
+                    tax_id = int(name_info[0].strip())
+                    if tax_id not in taxid2name:
+                        taxid2name[tax_id] = {
+                            'scientific_name': None,
+                            'genbank_common_name': None}
+
+                    tax_name = name_info[1].strip()
+
                     if name_type == 'scientific name':
-                        tax_id = int(name_info[0].strip())
-                        tax_name = name_info[1].strip()
-                        taxid2name[tax_id] = tax_name
+                        if taxid2name[tax_id]['scientific_name'] is not None:
+                            # Some logical checking, should only be one scientific name for a tax_id
+                            raise TaxonomyTreeException("Found more than one scientific name for a unique tax_id. The tax_id was '{}'".format(tax_id))
+                        taxid2name[tax_id]['scientific_name'] = tax_name
+
+                    elif name_type == 'genbank common name':
+                        if taxid2name[tax_id]['genbank_common_name'] is not None:
+                            # Some logical checking, should only be one genbank common name for a tax_id
+                            raise TaxonomyTreeException("Found more than one genbank common name for a unique tax_id. The tax_id was '{}'".format(tax_id))
+                        taxid2name[tax_id]['genbank_common_name'] = tax_name
+
+                    else:
+                        raise TaxonomyTreeException("Logical error. Should not end up here. name_type was '{}'".format(tax_name))
+
         except FileNotFoundError:
             log.exception('Could not find the file "{names_file}".'.format(names_file=self.names_filename))
             raise
@@ -156,13 +190,20 @@ class TaxonomyTree(object):
                     tax_id = int(tax_info[0].strip())
                     tax_parent = int(tax_info[1].strip())
                     tax_rank = tax_info[2].strip()
-                    tax_name = taxid2name[tax_id]
+                    tax_scientific_name = taxid2name[tax_id]['scientific_name']
+                    tax_common_name = taxid2name[tax_id]['genbank_common_name']
 
                     if tax_id in self.taxonomy:
                         # We already inserted the current tax_id as a parent of another
-                        self.taxonomy[tax_id] = self.taxonomy[tax_id]._replace(rank=tax_rank, parent=tax_parent)
+                        self.taxonomy[tax_id].rank = tax_rank
+                        self.taxonomy[tax_id].parent = tax_parent
                     else:
-                        node = Node(name=tax_name, rank=tax_rank, parent=tax_parent, children=[])
+                        node = Node(
+                            name=tax_scientific_name,
+                            genbank_common_name=tax_common_name,
+                            rank=tax_rank,
+                            parent=tax_parent,
+                            children=[])
                         self.taxonomy[tax_id] = node
                         self.leaves.add(tax_id)
 
@@ -171,7 +212,12 @@ class TaxonomyTree(object):
                         if tax_parent in self.leaves:
                             self.leaves.remove(tax_parent)
                     else:
-                        parent_node = Node(name=taxid2name[tax_parent], rank=None, parent=None, children=[tax_id])
+                        parent_node = Node(
+                            name=taxid2name[tax_parent]['scientific_name'],
+                            genbank_common_name=taxid2name[tax_parent]['genbank_common_name'],
+                            rank=None,
+                            parent=None,
+                            children=[tax_id])
                         self.taxonomy[tax_parent] = parent_node
 
                     # Save the tax_id to it's corresponding rank set
@@ -187,7 +233,8 @@ class TaxonomyTree(object):
         # Adjust the root (the root is tax_id=1, and its parent is also tax_id=1)
         root_children = self.taxonomy[1].children
         root_children.remove(1)
-        self.taxonomy[1] = self.taxonomy[1]._replace(parent=None, children=root_children)
+        self.taxonomy[1].parent = None
+        self.taxonomy[1].children = root_children
         self.taxonomy['timestamp'] = datetime.datetime.now()
         self.taxonomy['nodes_filename'] = path.abspath(self.nodes_filename)
         self.taxonomy['names_filename'] = path.abspath(self.names_filename)
@@ -233,6 +280,16 @@ class TaxonomyTree(object):
         name_dict = {}
         for tax_id in tax_id_list:
             name_dict[tax_id] = self._get_property(tax_id, 'name')
+        return name_dict
+
+    def get_common_name(self, tax_id_list):
+        """
+        Returns the genbank common names of the tax_ids in the input list.
+        """
+        self._verify_list(tax_id_list)
+        name_dict = {}
+        for tax_id in tax_id_list:
+            name_dict[tax_id] = self._get_property(tax_id, 'genbank_common_name')
         return name_dict
 
     def get_children(self, tax_id_list):
