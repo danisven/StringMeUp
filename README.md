@@ -7,7 +7,7 @@ A good start is to run `kraken2_confidence_recal --help`.
 
 ## About the confidence score
 
-The confidence score (CS) for a given read _R_ classified to a given node _J_ is calculated by dividing the number of k-mers that hit any node in the clade rooted at node _J_ (N) by the total number of k-mers that were queried against the database (M). Any k-mer with an ambiguous nucleotide is not queried against the database, and is thus not part of _M_.
+The confidence score (CS) for a given read _R_ classified to a given node _J_ is calculated by dividing the number of k-mers that hit any node in the clade rooted at node _J_ (N) by the total number of k-mers that were queried against the database (M). Any k-mer with an ambiguous nucleotide is not queried against the database, and is thus not part of M.
 
 CS = N / M
 
