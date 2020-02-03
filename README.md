@@ -1,5 +1,5 @@
 # kraken2_confidence_recal
-Tool to reclassify [Kraken 2] output based on the confidence score and/or minimizer hit groups.
+A post-processing tool to reclassify [Kraken 2] output based on the confidence score and/or minimizer hit groups.
 
 # Usage
 
