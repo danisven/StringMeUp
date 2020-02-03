@@ -7,11 +7,11 @@ A good start is to run `kraken2_confidence_recal --help`.
 
 ## About the confidence score
 
-The confidence score (CS) for a given read _R_ classified to a given node _J_ is calculated by dividing the number of k-mers that hit any node in the clade rooted at node _J_ (N) by the total number of k-mers that were queried against the database (M).
+The confidence score (CS) for a given read _R_ classified to a given node _J_ is calculated by dividing the number of k-mers that hit any node in the clade rooted at node _J_ (N) by the total number of k-mers that were queried against the database (M). Any k-mer with an ambiguous nucleotide is not queried against the database, and is thus not part of _M_.
 
 CS = N / M
 
-If the confidence score for a given read _R_ at a given node _J_ is equal to or larger than the specified cutoff, read _R_ is classified to node _J_. If not, the CS of read _R_ is calculated for the parent of node _J_. This is repeated until the CS >= CS cutoff or until we reach the root of the taxonomy. If the CS < CS cutoff at the root, the read is deemed unclassified.
+If the CS for a given read _R_ at a given node _J_ is equal to or larger than the specified cutoff, read _R_ is classified to node _J_. If not, the CS of read _R_ is calculated for the parent of node _J_. This is repeated until the CS >= CS cutoff or until we reach the root of the taxonomy. If the CS < CS cutoff at the root, the read is deemed unclassified.
 
 ## Reclassifying Kraken 2 output
 
