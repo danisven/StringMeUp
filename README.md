@@ -1,5 +1,5 @@
 # kraken2_confidence_recal
-Tool to reclassify Kraken 2 output based on the confidence score and/or minimizer hit groups.
+Tool to reclassify [Kraken 2] output based on the confidence score and/or minimizer hit groups.
 
 # Usage
 
@@ -53,3 +53,6 @@ To save a verbose version of the read-by-read classifications, add `--output_ver
 This option requires an input file that was produced with my [fork] of Kraken 2.
 
 Add `--minimum_hit_groups <INT>` to the command. A read can only be considered classified if the number of minimizer hit groups is at or above the minimum_hit_groups setting.
+
+[Kraken 2]: https://github.com/DerrickWood/kraken2
+[fork]: https://github.com/danisven/kraken2
