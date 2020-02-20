@@ -240,6 +240,43 @@ class TaxonomyTree(object):
         self.taxonomy['names_filename'] = path.abspath(self.names_filename)
         log.info("Taxonomy tree built.")
 
+
+    def translate2taxid(self, scientific_names_list):
+        """
+        Will return the tax_ids for the scientific names listed in the input
+        list. If no name can be found the value will be None. More than one
+        tax_id may be found for any given scientific name - they will all be
+        added to the list of tax_ids being returned for that scientific name.
+        Returns:
+        {<scientific_name>: [tax_id_1, tax_id_2]}
+        """
+        self._verify_list(scientific_names_list)
+        tax_id_dict = {k: list() for k in scientific_names_list}
+
+        if len(tax_id_dict) != len(scientific_names_list):
+            log.warning('You entered duplicated names in the input list for translate2taxid.')
+
+        if self.taxonomy:
+            for tax_id in self.taxonomy:
+                if not isinstance(tax_id, int):
+                    # In this case we are getting one of the keys
+                    # ['timestamp', 'nodes_filename', 'names_filename'] and
+                    # should continue to look for tax_ids
+                    continue
+                if self.taxonomy[tax_id].name in tax_id_dict:
+                    name = self.taxonomy[tax_id].name
+                    tax_id_dict[name].append(tax_id)
+                else:
+                    # continue search
+                    continue
+
+            return tax_id_dict
+
+        else:
+            log.exception('You have not built the taxonomy tree yet.')
+            raise TaxonomyTreeException('You have not built the taxonomy tree yet.')
+
+
     def _get_property(self, tax_id, property):
         """
         Internal function to fetch the value of a single property of a namedtuple in the taxonomy dictionary.
