@@ -542,6 +542,61 @@ class TaxonomyTree(object):
 
         return clade_dict
 
+    def get_siblings(tax_id):
+        """
+        NB! This fnc hasn't been extensively tested, use at own risk.
+        
+        For a given tax_id X with any rank in ['S', 'G', 'F', 'O', 'C', 'P'], return all taxa with the same rank
+        in the clade rooted at the parent of X. The parent is defined as the most recent ancestor of X that has a rank
+        also in ['S', 'G', 'F', 'O', 'C', 'P'].
+        
+        For example, if the tax_id 3352 (Pinus taeda, a species) is submitted to the function, it will return all other
+        species in the genus Pinus (3337). Conversely, if the genus Pinus (3337) is submitted, the function will return all
+        genera in the family Pinaceae (3318).
+        """
+        # TODO: Test this more.
+        # TODO: In line with other exposed functions in this class, it should take a list of taxids instead of a single one.
+        
+        tax_id_rank = self.get_rank_code([tax_id])[tax_id]
+        rank = tax_id_rank.rank_code
+        rank_codes = ['S', 'G', 'F', 'O', 'C', 'P']
+
+        if tax_id_rank.rank_depth != 0:
+            raise TaxonomyTreeException("Can only work with ranks of level {}.".format(rank_codes))
+
+        def get_parent(tax_id):
+            parent_rank_ok = False
+            current_tax_id = tax_id
+            while not parent_rank_ok:
+                parent = self.get_parent([current_tax_id])[current_tax_id]
+                taxonomy_rank = self.get_rank_code([parent])[parent]
+                if taxonomy_rank.rank_code in rank_codes and taxonomy_rank.rank_depth == 0:
+                    parent_rank_ok = True
+                elif parent == 1:
+                    parent_rank_ok = True
+                else:
+                    current_tax_id = parent
+
+            return parent
+
+        parent = get_parent(tax_id)
+
+        visited_nodes = set()
+        siblings = set()
+        def dfs(tax_id, wanted_rank):
+            if tax_id not in visited_nodes:
+                visited_nodes.add(tax_id)
+                taxonomy_rank = self.get_rank_code([tax_id])[tax_id]
+                if taxonomy_rank.rank_code != wanted_rank:
+                    children = self.get_children([tax_id])[tax_id]
+                    for child in children:
+                        dfs(child, wanted_rank)
+                else:
+                    siblings.add(tax_id)
+
+        dfs(parent, rank)
+        return siblings
+    
     def set_taxonomy_files(self, nodes_filename, names_filename):
         log.info('Setting the nodes filename to {}'.format(nodes_filename))
         self.nodes_filename = nodes_filename
