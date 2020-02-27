@@ -54,6 +54,7 @@ class TaxonomyTree(object):
     def __init__(self, nodes_filename=None, names_filename=None, pickled_taxonomy_filename=None):
         self.taxonomy = {}
         self.byranks = {}
+        # TODO: Save self.byranks in the pickle
         self.leaves = set()
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
@@ -368,7 +369,6 @@ class TaxonomyTree(object):
 
         return distance
 
-
     def get_rank(self, tax_id_list):
         """
         Returns the rank of each tax_id.
@@ -542,21 +542,26 @@ class TaxonomyTree(object):
 
         return clade_dict
 
-    def get_siblings(tax_id):
+    def get_siblings(self, tax_id):
         """
         NB! This fnc hasn't been extensively tested, use at own risk.
-        
-        For a given tax_id X with any rank in ['S', 'G', 'F', 'O', 'C', 'P'], return all taxa with the same rank
-        in the clade rooted at the parent of X. The parent is defined as the most recent ancestor of X that has a rank
-        also in ['S', 'G', 'F', 'O', 'C', 'P'].
-        
-        For example, if the tax_id 3352 (Pinus taeda, a species) is submitted to the function, it will return all other
-        species in the genus Pinus (3337). Conversely, if the genus Pinus (3337) is submitted, the function will return all
-        genera in the family Pinaceae (3318).
+
+        This fnc is similar to get_clade_rank_taxids, but I think it should
+        be faster.
+
+        For a given tax_id X with any rank in ['S', 'G', 'F', 'O', 'C', 'P'],
+        return all taxa with the same rank in the clade rooted at the parent
+        of X. The parent is defined as the most recent ancestor of X that has
+        a rank also in ['S', 'G', 'F', 'O', 'C', 'P'].
+
+        For example, if the tax_id 3352 (Pinus taeda, a species) is submitted
+        to the function, it will return all other species in the genus Pinus
+        (3337). Conversely, if the genus Pinus (3337) is submitted, the
+        function will return all genera in the family Pinaceae (3318).
         """
         # TODO: Test this more.
         # TODO: In line with other exposed functions in this class, it should take a list of taxids instead of a single one.
-        
+
         tax_id_rank = self.get_rank_code([tax_id])[tax_id]
         rank = tax_id_rank.rank_code
         rank_codes = ['S', 'G', 'F', 'O', 'C', 'P']
@@ -583,6 +588,7 @@ class TaxonomyTree(object):
 
         visited_nodes = set()
         siblings = set()
+
         def dfs(tax_id, wanted_rank):
             if tax_id not in visited_nodes:
                 visited_nodes.add(tax_id)
@@ -596,7 +602,7 @@ class TaxonomyTree(object):
 
         dfs(parent, rank)
         return siblings
-    
+
     def set_taxonomy_files(self, nodes_filename, names_filename):
         log.info('Setting the nodes filename to {}'.format(nodes_filename))
         self.nodes_filename = nodes_filename
