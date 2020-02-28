@@ -10,7 +10,7 @@ setup(
 
     # Author details
     author='Daniel Svensson',
-    author_email='david.svensson@umuse.se',
+    author_email='daniel.svensson@umu.se',
 
     keywords="Bioinformatics NGS kraken2",
     classifiers=[
@@ -18,8 +18,9 @@ setup(
         'License :: OSI Approved :: MIT',
         'Programming Language :: Python :: 3'
         ],
-    install_requires=['dataclasses '],
+    install_requires=['dataclasses'],
     packages=find_packages(exclude=['contrib', 'docs', 'test*']),
     entry_points={'console_scripts': [  'kraken2_confidence_recal=kraken2_confidence_recal.kraken2_confidence_recal:main',
 #                                        'kraken2-taxonomy=kraken2_confidence_recal.taxonomy:main',
-                                        ]})
+
+]})
