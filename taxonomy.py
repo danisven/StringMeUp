@@ -518,6 +518,28 @@ class TaxonomyTree(object):
 
         return clade_dict
 
+    def get_lca(self, tax_id_1, tax_id_2):
+        """
+        Get the tax_id of the lowest common ancestor (LCA) of two tax_ids.
+        """
+        lca = None
+        lineages = self.get_lineage([tax_id_1, tax_id_2])
+        paired_lineages = zip(lineages[tax_id_1], lineages[tax_id_2])
+
+        for i, lineage_pairs in enumerate(paired_lineages):
+            if i == 0:
+                # Both must start at root
+                assert lineage_pairs[0] == 1 and lineage_pairs[1] == 1
+                lca = lineage_pairs[0]
+                continue
+
+            if lineage_pairs[0] == lineage_pairs[1]:
+                lca = lineage_pairs[0]
+            else:
+                break
+
+        return lca
+
     def get_clade_rank_taxids(self, tax_ids, rank):
         """
         For each clade rooted at the input tax_ids, return all tax_ids that
