@@ -523,7 +523,7 @@ class TaxonomyTree(object):
 
         for tax_id in tax_ids:
             clade_leaves = set()
-            clade_leaves = dfs(tax_id, clade_leaves)
+            clade_leaves = get_leaves_dfs(tax_id, clade_leaves)
             clade_dict[tax_id] = clade_leaves
 
         return clade_dict
