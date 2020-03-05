@@ -515,7 +515,7 @@ class TaxonomyTree(object):
                 children = self.get_children([tax_id])[tax_id]
                 if children:
                     for child in children:
-                        get_leaves_dfs(child, visited_nodes, clade_leaves)
+                        get_leaves_dfs(child, clade_leaves, visited_nodes)
                 else:
                     clade_leaves.add(tax_id)
 
