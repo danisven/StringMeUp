@@ -54,7 +54,6 @@ class TaxonomyTree(object):
     def __init__(self, nodes_filename=None, names_filename=None, pickled_taxonomy_filename=None):
         self.taxonomy = {}
         self.byranks = {}
-        # TODO: Save self.byranks in the pickle
         self.leaves = set()
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
@@ -507,14 +506,25 @@ class TaxonomyTree(object):
         self._verify_list(tax_ids)
         clade_dict = {}
 
-        if tax_ids == [1]:
-            clade_dict[1] = self.leaves
+        def get_leaves_dfs(tax_id, clade_leaves, visited_nodes=None):
+            if visited_nodes == None:
+                visited_nodes = set()
 
-        else:
-            for tax_id in tax_ids:
-                clade = self.get_clade([tax_id])[tax_id]
-                clade_leaves = self.leaves.intersection(clade)
-                clade_dict[tax_id] = clade_leaves
+            if tax_id not in visited_nodes:
+                visited_nodes.add(tax_id)
+                children = self.get_children([tax_id])[tax_id]
+                if children:
+                    for child in children:
+                        get_leaves_dfs(child, visited_nodes, clade_leaves)
+                else:
+                    clade_leaves.add(tax_id)
+
+                return clade_leaves
+
+        for tax_id in tax_ids:
+            clade_leaves = set()
+            clade_leaves = dfs(tax_id, clade_leaves)
+            clade_dict[tax_id] = clade_leaves
 
         return clade_dict
 
