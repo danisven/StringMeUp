@@ -550,29 +550,64 @@ class TaxonomyTree(object):
 
         return lca
 
-    def get_clade_rank_taxids(self, tax_ids, rank):
+    def get_clade_rank_taxids(self, tax_ids, rank=None):
         """
         For each clade rooted at the input tax_ids, return all tax_ids that
-        represent taxa at the supplied rank. For example:
+        represent taxa at the supplied rank, or all ranks. For example:
         # get_clade_rank_taxids([1], 'phylum') -- returns all phyla in the whole tree
         # get_clade_rank_taxids([2, 9443], 'genus') -- returns all genera in the clades rooted at 'Bacteria' and 'Primates'
+        # get_clade_rank_taxids([1]) -- returns all canonical ranks in the whole tree.
         """
-
         self._verify_list(tax_ids)
-        clade_dict = {}
+
+        canonical_ranks = translate_rank2code.values()
+        canonical_rank_weights = {rank: weight for weight, rank in enumerate(canonical_ranks)}
+        clade_tax_rank_dict = {tax_id: dict() for tax_id in tax_ids}
+
+        if rank:
+            rank = translate_rank2code[rank]
+        else:
+            rank = canonical_ranks
+
+        def dfs(tax_id, visited_nodes=None, tax_lvl_dict=None, wanted_ranks=None):
+            """
+            Fnc to recursively search the taxonomy tree in a depth-first
+            fashion. Saves all tax_ids that are canonical (S/G/F etc) in
+            tax_lvl_dict.
+            """
+            if visited_nodes is None:
+                visited_nodes = set()
+
+            if wanted_ranks is None:
+                wanted_ranks = {rank in canonical_ranks}
+
+            if tax_lvl_dict is None:
+                tax_lvl_dict = {tax_lvl: set() for tax_lvl in wanted_ranks}
+
+            if tax_id not in visited_nodes:
+                visited_nodes.add(tax_id)
+
+                taxonomy_rank = self.get_rank_code([tax_id])[tax_id]
+                rank_code = taxonomy_rank.rank_code
+                if taxonomy_rank.rank_depth == 0:
+                    if rank_code in wanted_ranks:
+                        tax_lvl_dict[rank_code].add(tax_id)
+
+                rank_code_weight = canonical_rank_weights[rank_code]
+
+                # Keep going down the tree only if there's a wanted rank below current rank
+                if any([rank_code_weight < canonical_rank_weights[rank] for rank in wanted_ranks]):
+                    children = self.get_children([tax_id])[tax_id]
+                    for child in children:
+                        _ = dfs(child, visited_nodes, tax_lvl_dict, wanted_ranks)
+
+                return tax_lvl_dict
 
         for tax_id in tax_ids:
-            clade = self.get_clade([tax_id])[tax_id]
-            clade_rank_taxids = None
+            tax_lvl_dict = dfs(tax_id, wanted_ranks=set(rank))
+            clade_tax_rank_dict[tax_id] = tax_lvl_dict
 
-            try:
-                clade_rank_taxids = clade.intersection(self.byranks[rank])
-            except KeyError:
-                log.warning('No such rank: {rank}.'.format(rank=rank))
-
-            clade_dict[tax_id] = clade_rank_taxids
-
-        return clade_dict
+        return clade_tax_rank_dict
 
     def get_siblings(self, tax_id):
         """
