@@ -561,7 +561,7 @@ class TaxonomyTree(object):
         self._verify_list(tax_ids)
 
         canonical_ranks = translate_rank2code.values()
-        canonical_rank_weights = {rank: weight for weight, rank in enumerate(canonical_ranks)}
+        canonical_rank_weights = {rank: weight for weight, rank in enumerate(['R'] + list(canonical_ranks))}
         clade_tax_rank_dict = {tax_id: dict() for tax_id in tax_ids}
 
         if rank:
