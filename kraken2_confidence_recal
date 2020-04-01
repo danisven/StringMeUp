@@ -4,6 +4,7 @@ import argparse
 import taxonomy
 import operator
 import logging
+import gzip
 import sys
 from dataclasses import dataclass
 from os import path
@@ -23,7 +24,7 @@ log = logging.getLogger(path.basename(__file__))
 # Arguments
 parser = argparse.ArgumentParser(
     prog='Confidence score reclassification',
-    usage='confidence_recal [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--output_verbose <FILE>] [--keep_unclassified] [--help] confidence classifications',
+    usage='confidence_recal [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--output_verbose <FILE>] [--keep_unclassified] [--minimum_hit_groups INT] [--gz_output] [--help] confidence classifications',
     description='Reclassification of reads (Kraken 2) by confidence score.')
 parser.add_argument(
     'confidence_threshold',
@@ -72,6 +73,11 @@ parser.add_argument(
     metavar='INT',
     type=int,
     help='The minimum number of hit groups a read needs to be classified. NOTE: You need to supply a classifications file (kraken2 output) that contain the "minimizer_hit_groups" column.')
+parser.add_argument(
+    '--gz_output',
+    action='store_true',
+    help='Set this flag to output <output_classifications> and <output_verbose> in gzipped format (will add .gz extension to the filenames).'
+)
 args = parser.parse_args()
 
 if args.names and args.nodes is None:
@@ -123,7 +129,7 @@ def validate_input_file(putative_classifications_file, verbose_input):
             file=putative_classifications_file))
         sys.exit()
 
-    with open(putative_classifications_file, 'r') as f:
+    with read_file(putative_classifications_file) as f:
         line = f.readline()
         line_proc = line.strip()
         line_proc = line_proc.split('\t')
@@ -164,7 +170,7 @@ def is_verbose_input(classifications_file):
     Returns true if input file consists of 6 columns instead of 5.
     """
 
-    with open(classifications_file, 'r') as f:
+    with read_file(classifications_file) as f:
         line = f.readline()
         line_proc = line.strip()
         line_proc = line_proc.split('\t')
@@ -627,7 +633,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
             row_items.insert(4, read.minimizer_hit_groups)
 
         row_string = '\t'.join([str(x) for x in row_items]) + '\n'
-        o.write(row_string)
+        _ = o.write(row_string)  # gzip write fnc returns output, therefore send to "_"
 
     def write_verbose_output(read):
         # read is an instance of ReadClassification
@@ -650,7 +656,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
             row_items.insert(2, read.minimizer_hit_groups)
 
         row_string = '\t'.join([str(x) for x in row_items]) + '\n'
-        v.write(row_string)
+        _ = v.write(row_string)  # gzip write fnc returns output, therefore send to "_"
 
     # Parse the input file, read per read
     i = 0
@@ -702,6 +708,26 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
     make_kraken2_report(tax_reads_dict, taxonomy_tree, i)  # i is used to calculate the ratio of classified reads (col 1 in output file).
 
 
+def read_file(filename):
+    """
+    Wrapper to read either gzipped or ordinary text file input.
+    """
+    if filename.endswith('.gz'):
+        return gzip.open(filename, 'rt')
+    else:
+        return open(filename, 'r')
+
+
+def write_file(filename):
+    """
+    Wrapper to write either gzipped or ordinary text file output.
+    """
+    if args.gz_output:
+        return gzip.open(filename, 'wt')
+    else:
+        return open(filename, 'w')
+
+
 if __name__ == '__main__':
     verbose_input = is_verbose_input(args.original_classifications_file)
     if verbose_input:
@@ -722,18 +748,22 @@ if __name__ == '__main__':
     v = None
 
     # Open the classifications input file:
-    with open(args.original_classifications_file, 'r') as f:
+    with read_file(args.original_classifications_file) as f:
         log.info('Processing read classifications from "{file}".'.format(file=path.abspath(args.original_classifications_file)))
 
         # If user wants to save the read classifications to file, open file
         if args.output_classifications:
+            if args.gz_output:
+                args.output_classifications += '.gz'
             log.info('Saving reclassified reads in {}.'.format(args.output_classifications))
-            o = open(args.output_classifications, 'w')
+            o = write_file(args.output_classifications)
 
         # If user wants to save the verbose classification output to file, open file
         if args.output_verbose:
+            if args.gz_output:
+                args.output_verbose += '.gz'
             log.info('Saving verbose classification information in {}.'.format(args.output_verbose))
-            v = open(args.output_verbose, 'w')
+            v = write_file(args.output_verbose)
 
         # Run the main loop (reclassification)
         main_loop(f, tax_reads_dict, taxonomy_tree, verbose_input, o, v)
