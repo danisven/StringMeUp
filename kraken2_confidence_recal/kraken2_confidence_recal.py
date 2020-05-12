@@ -644,9 +644,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
     # Output a report file
     make_kraken2_report(tax_reads_dict, taxonomy_tree, i)  # i is used to calculate the ratio of classified reads (col 1 in output file).
 
-
-if __name__ == '__main__':
-
+def get_arguments():
     # Arguments
     parser = argparse.ArgumentParser(
         prog='Confidence score reclassification',
@@ -700,13 +698,18 @@ if __name__ == '__main__':
         type=int,
         help='The minimum number of hit groups a read needs to be classified. NOTE: You need to supply a classifications file (kraken2 output) that contain the "minimizer_hit_groups" column.')
     args = parser.parse_args()
+    return args
+
+if __name__ == '__main__':
+
+    args = get_arguments()
 
     if args.names and args.nodes is None:
         parser.error("--names requires --nodes to be set as well.")
 
     taxa_lineages = {}
     report_frequency = 10000000  # Will output progress every nth read
-    
+
     verbose_input = is_verbose_input(args.original_classifications_file)
     if verbose_input:
         log.info("The input file appears to contain minimizer_hit_groups.")
