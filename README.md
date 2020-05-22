@@ -2,7 +2,7 @@
 
 A post-processing tool to reclassify [Kraken 2] output based on the confidence score and/or minimizer hit groups.
 
-# Usage
+## Usage
 
 A good start is to run `stringmeup --help`.
 
