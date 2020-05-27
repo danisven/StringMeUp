@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 import argparse
 import stringmeup.taxonomy
@@ -53,7 +53,7 @@ class ReportNode:
     offset: int
 
 
-def validate_input_file(putative_classifications_file, verbose_input):
+def validate_input_file(putative_classifications_file, verbose_input, minimum_hit_groups):
     """
     Perform simple validation of the input file.
     """
@@ -74,12 +74,12 @@ def validate_input_file(putative_classifications_file, verbose_input):
         # TODO: This can be done much better.
         if not verbose_input:
             num_cols = len(line_proc) == 5  # original type of kraken2 output file
-            if args.minimum_hit_groups:
+            if minimum_hit_groups:
                 log.error('You specified --minimum_hit_groups {}, but didn\'t supply an input file that contain a minimizer hit groups column.')
                 sys.exit()
         else:
             num_cols = len(line_proc) == 6  # 6 columns if the output was produced with the verbose version of kraken2 that outputs minimizer_groups
-            if not args.minimum_hit_groups:
+            if not minimum_hit_groups:
                 log.error('The input file contains too many columns. Use --minimum_hit_groups if you want to use an input file that contain a minimizer hit groups column.')
                 sys.exit()
 
@@ -148,7 +148,7 @@ def process_kmer_string(kmer_info_string):
     return taxa_kmer_dict
 
 
-def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input):
+def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input, minimum_hit_groups, taxa_lineages):
     """
     Sums the number of kmers that hit in the clade rooted at "current_node",
     and divides it with the total number of kmers queried against the database:
@@ -191,7 +191,7 @@ def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input):
 
     # Filter minimizer_hit_groups
     if verbose_input:
-        if read.minimizer_hit_groups < args.minimum_hit_groups:
+        if read.minimizer_hit_groups < minimum_hit_groups:
             doomed_to_fail = True
 
     # The nr of kmers that hit within the clade rooted at the current node:
@@ -250,20 +250,20 @@ def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input):
             if doomed_to_fail:
                 read.recalculated_conf = max_confidence
                 read.reclassified_taxid = 0
-                return read
+                return read, taxa_lineages
 
         # If the confidence at this node is sufficient, we classify it to
         # the current node (TaxID).
         if read.recalculated_conf >= confidence_threshold:
             read.classified = True
             read.reclassified_taxid = read.current_node
-            return read
+            return read, taxa_lineages
 
         # If the current node is the root, we stop (can't go higher up in the
         # taxonomy).
         elif read.current_node == 1:
             read.reclassified_taxid = 0
-            return read
+            return read, taxa_lineages
 
         # Otherwise, set the current_node to the parent and keep going.
         else:
@@ -452,7 +452,7 @@ def format_kraken2_report_row(report_node):
     return report_row
 
 
-def make_kraken2_report(tax_reads, taxonomy_tree, total_reads):
+def make_kraken2_report(tax_reads, taxonomy_tree, total_reads, output_report):
     """
     Gets the information that should be printed from
     get_kraken2_report_content. Formats the information and prints it to file
@@ -465,15 +465,15 @@ def make_kraken2_report(tax_reads, taxonomy_tree, total_reads):
         tax_reads, taxonomy_tree, total_reads)
 
     # If the output should go to file
-    if args.output_report:
-        with open(args.output_report, 'w') as f:
+    if output_report:
+        with open(output_report, 'w') as f:
             for node in report_node_list:
 
                 # Format the output
                 report_row = format_kraken2_report_row(node)
                 f.write(report_row + '\n')
 
-            log.info('Report saved in {}.'.format(args.output_report))
+            log.info('Report saved in {}.'.format(output_report))
 
     # Otherwise, print to stdout
     else:
@@ -548,7 +548,7 @@ def create_read(kraken2_read, verbose_input=False):
     return read
 
 
-def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_handle=None, v_handle=None):
+def main_loop(f_handle, tax_reads_dict, taxonomy_tree, args, report_frequency, taxa_lineages, verbose_input=False, o_handle=None, v_handle=None):
     """
     f_handle: classifications input file to read from.
     o_handle: output_classifications file to write to.
@@ -568,7 +568,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
             row_items.insert(4, read.minimizer_hit_groups)
 
         row_string = '\t'.join([str(x) for x in row_items]) + '\n'
-        _ = o.write(row_string)  # gzip write fnc returns output, therefore send to "_"
+        _ = o_handle.write(row_string)  # gzip write fnc returns output, therefore send to "_"
 
     def write_verbose_output(read):
         # read is an instance of ReadClassification
@@ -591,7 +591,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
             row_items.insert(2, read.minimizer_hit_groups)
 
         row_string = '\t'.join([str(x) for x in row_items]) + '\n'
-        _ = v.write(row_string)  # gzip write fnc returns output, therefore send to "_"
+        _ = v_handle.write(row_string)  # gzip write fnc returns output, therefore send to "_"
 
     # Parse the input file, read per read
     i = 0
@@ -605,11 +605,13 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
             read = create_read(read_pair, verbose_input)
 
             # Reclassify the read pair based on confidence
-            read = reclassify_read(
+            read, taxa_lineages = reclassify_read(
                 read,
                 args.confidence_threshold,
                 taxonomy_tree,
-                verbose_input)
+                verbose_input,
+                args.minimum_hit_groups,
+                taxa_lineages)
 
             # Counter for number of reads per taxon/node
             if read.reclassified_taxid in tax_reads_dict['hits_at_node']:
@@ -640,7 +642,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, verbose_input=False, o_ha
     log.info('Done processing reads. They were {} in total.'.format(i))
 
     # Output a report file
-    make_kraken2_report(tax_reads_dict, taxonomy_tree, i)  # i is used to calculate the ratio of classified reads (col 1 in output file).
+    make_kraken2_report(tax_reads_dict, taxonomy_tree, i, args.output_report)  # i is used to calculate the ratio of classified reads (col 1 in output file).
 
 
 def read_file(filename):
@@ -653,11 +655,11 @@ def read_file(filename):
         return open(filename, 'r')
 
 
-def write_file(filename):
+def write_file(filename, gz_output):
     """
     Wrapper to write either gzipped or ordinary text file output.
     """
-    if args.gz_output:
+    if gz_output:
         return gzip.open(filename, 'wt')
     else:
         return open(filename, 'w')
@@ -749,7 +751,7 @@ def stringmeup():
         log.info("The input file appears to contain minimizer_hit_groups.")
 
     # Perform a naive check of the input file
-    validate_input_file(args.original_classifications_file, verbose_input)
+    validate_input_file(args.original_classifications_file, verbose_input, args.minimum_hit_groups)
 
     # If user provided names.dmp and nodes.dmp, create taxonomy tree from that,
     # otherwise, create i from a pickled taxonomy file
@@ -773,7 +775,7 @@ def stringmeup():
                 if not args.output_classifications.endswith('.gz'):
                     args.output_classifications += '.gz'
             log.info('Saving reclassified reads in {}.'.format(args.output_classifications))
-            o = write_file(args.output_classifications)
+            o = write_file(args.output_classifications, args.gz_output)
 
         # If user wants to save the verbose classification output to file, open file
         if args.output_verbose:
@@ -781,10 +783,10 @@ def stringmeup():
                 if not args.output_verbose.endswith('.gz'):
                     args.output_verbose += '.gz'
             log.info('Saving verbose classification information in {}.'.format(args.output_verbose))
-            v = write_file(args.output_verbose)
+            v = write_file(args.output_verbose, args.gz_output)
 
         # Run the main loop (reclassification)
-        main_loop(f, tax_reads_dict, taxonomy_tree, verbose_input, o, v)
+        main_loop(f, tax_reads_dict, taxonomy_tree, args, report_frequency, taxa_lineages, verbose_input, o, v)
 
     # Remember to close files
     if o:
