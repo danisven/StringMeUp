@@ -5,7 +5,7 @@ A post-processing tool to reclassify [Kraken 2] output based on the confidence s
 ## Installation
 StringMeUP is available to install through conda. Simply run the following command to install it:
 
-`conda install -c bioconda stringmeup`
+`conda install -c conda-forge -c bioconda stringmeup`
 
 ## Usage
 
