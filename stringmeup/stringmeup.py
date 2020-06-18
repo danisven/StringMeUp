@@ -3,11 +3,11 @@
 __version__ = "0.1.1"
 
 import argparse
-import stringmeup.taxonomy
 import operator
 import logging
 import gzip
 import sys
+from stringmeup import taxonomy
 from dataclasses import dataclass
 from os import path
 
