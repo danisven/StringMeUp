@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 import argparse
 import operator
@@ -53,7 +53,7 @@ class ReportNode:
     offset: int
 
 
-def validate_input_file(putative_classifications_file, verbose_input, minimum_hit_groups):
+def validate_input_file(putative_classifications_file, verbose_input, minimum_hit_groups, paired_input):
     """
     Perform simple validation of the input file.
     """
@@ -77,11 +77,36 @@ def validate_input_file(putative_classifications_file, verbose_input, minimum_hi
         else:
             num_cols = len(line_proc) == 6  # 6 columns if the output was produced with the verbose version of kraken2 that outputs minimizer hit groups
 
+        # Line must start with C or U (as in Classified/unclassified)
         line_start = line_proc[0] in ['U', 'C']
-        paired_data_1 = len(line_proc[3].split('|')) == 2
-        paired_data_2 = len(line_proc[-1].split('|:|')) == 2  # Should be enough to change this line if we want to accomodate reclassification of single reads
 
-        if num_cols and line_start and paired_data_1 and paired_data_2:
+        # If the data is paired
+        if paired_input:
+            # Must be information on both sides of the pipe character
+            data_col_1 = len(line_proc[3].split('|')) == 2
+
+            # If the data is paired in the 3rd column, it must also be paired in the last column
+            if "|" in line_proc[-1]:
+                data_col_2 = len(line_proc[-1].split('|:|')) == 2
+            else:
+                data_col_2 = False
+
+        # If the input is from single end reads, atleast the read length column (3rd) must be an int
+        else:
+            try:
+                int(line_proc[3])
+            except:
+                data_col_1 = False
+            else:
+                data_col_1 = True
+
+            # And the last column should contain colons between kmer/taxon pairs
+            if ":" in line_proc[4]:
+                data_col_2 = True
+            else:
+                data_col_2 = False
+
+        if num_cols and line_start and data_col_1 and data_col_2:
             log.debug('Validation OK.')
             return
         else:
@@ -89,9 +114,23 @@ def validate_input_file(putative_classifications_file, verbose_input, minimum_hi
             log.debug('First line of input: {}'.format(line))
             log.debug('num_cols: {}'.format(num_cols))
             log.debug('line_start: {}'.format(line_start))
-            log.debug('paired_data_1: {}'.format(paired_data_1))
-            log.debug('paired_data_2: {}'.format(paired_data_2))
+            log.debug('data_col_1: {}'.format(data_col_1))
+            log.debug('data_col_1: {}'.format(data_col_2))
             sys.exit()
+
+
+def is_paired_input(classifications_file):
+    """
+    Returns true if input file appears to contain paired read data.
+    """
+    with read_file(classifications_file) as f:
+        line = f.readline()
+        line_proc = line.strip()
+        line_proc = line_proc.split('\t')
+
+        # If column 4 contains a pipe character "|", the data is paired
+        if "|" in line_proc[3]:
+            return True
 
 
 def is_verbose_input(classifications_file):
@@ -109,7 +148,7 @@ def is_verbose_input(classifications_file):
             return False
 
 
-def process_kmer_string(kmer_info_string):
+def process_kmer_string(kmer_info_string, paired_input):
     """
     Process a kmer info string (last column of a Kraken 2 output file), so that
     we get a dictionary mapping of tax_ids to total sum of kmer hits.
@@ -120,7 +159,10 @@ def process_kmer_string(kmer_info_string):
      tax_id_#N: Z kmer hits}
     """
     kmer_info_string = kmer_info_string.split()
-    kmer_info_string.remove('|:|')
+
+    # Kraken2 classifications file for paired data contain the "|:|" delimiter
+    if paired_input:
+        kmer_info_string.remove('|:|')
 
     # Messy list comprehension. Converts all "taxa":"num_kmer" string pairs
     # into integer tuples like (taxa, num_kmers), and saves them in a list.
@@ -142,7 +184,7 @@ def process_kmer_string(kmer_info_string):
     return taxa_kmer_dict
 
 
-def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input, minimum_hit_groups, taxa_lineages):
+def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input, minimum_hit_groups, taxa_lineages, paired_input):
     """
     Sums the number of kmers that hit in the clade rooted at "current_node",
     and divides it with the total number of kmers queried against the database:
@@ -153,10 +195,11 @@ def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input, mi
     This is repeated until confidence >= confidence_threshold.
 
     In this function it's envisionable to include other parameters for the
-    classification... Right now I'm only considering the confidence score.
+    classification... Right now I'm only considering the confidence score
+    and minimum hit groups.
     """
     # Process the kmer string into a dict of {tax_id: #kmers} key, value pairs
-    taxa_kmer_dict = process_kmer_string(read.kmer_string)
+    taxa_kmer_dict = process_kmer_string(read.kmer_string, paired_input)
 
     # Make the current node the same as the original classification
     read.current_node = read.original_taxid
@@ -542,7 +585,7 @@ def create_read(kraken2_read, verbose_input=False):
     return read
 
 
-def main_loop(f_handle, tax_reads_dict, taxonomy_tree, args, report_frequency, taxa_lineages, verbose_input=False, o_handle=None, v_handle=None):
+def main_loop(f_handle, tax_reads_dict, taxonomy_tree, args, report_frequency, taxa_lineages, paired_input, verbose_input=False, o_handle=None, v_handle=None):
     """
     f_handle: classifications input file to read from.
     o_handle: output_classifications file to write to.
@@ -605,7 +648,8 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, args, report_frequency, t
                 taxonomy_tree,
                 verbose_input,
                 args.minimum_hit_groups,
-                taxa_lineages)
+                taxa_lineages,
+                paired_input)
 
             # Counter for number of reads per taxon/node
             if read.reclassified_taxid in tax_reads_dict['hits_at_node']:
@@ -758,8 +802,15 @@ def stringmeup():
             log.warning('Will NOT reclassify based on minimizer hit groups.')
             args.minimum_hit_groups = None
 
+    # Check if the input data is paired or not
+    paired_input = is_paired_input(args.original_classifications_file)
+    if paired_input:
+        log.info('Classifications were made from paired-end data.')
+    else:
+        log.info('Classifications were made from single-read data.')
+
     # Perform a naive check of the input file
-    validate_input_file(args.original_classifications_file, verbose_input, args.minimum_hit_groups)
+    validate_input_file(args.original_classifications_file, verbose_input, args.minimum_hit_groups, paired_input)
 
     # If user provided names.dmp and nodes.dmp, create taxonomy tree from that,
     # otherwise, create it from a pickled taxonomy file
@@ -794,7 +845,7 @@ def stringmeup():
             v = write_file(args.output_verbose, args.gz_output)
 
         # Run the main loop (reclassification)
-        main_loop(f, tax_reads_dict, taxonomy_tree, args, report_frequency, taxa_lineages, verbose_input, o, v)
+        main_loop(f, tax_reads_dict, taxonomy_tree, args, report_frequency, taxa_lineages, paired_input, verbose_input, o, v)
 
     # Remember to close files
     if o:
