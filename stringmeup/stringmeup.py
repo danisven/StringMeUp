@@ -57,10 +57,11 @@ def validate_input_file(putative_classifications_file, verbose_input, minimum_hi
     """
     Perform simple validation of the input file.
     """
-    log.debug('Naive validation of input classifications file.')
+
+    log.debug('Validating input classifications file.')
 
     if not path.isfile(putative_classifications_file):
-        log.error('Cannot find the classification file ({file}).'.format(
+        log.error('Cannot find the specified file ({file}).'.format(
             file=putative_classifications_file))
         sys.exit()
 
@@ -70,18 +71,11 @@ def validate_input_file(putative_classifications_file, verbose_input, minimum_hi
         line_proc = line_proc.split('\t')
 
         # The following should be the case of a Kraken 2 output file
-        # First, check so the number of columns in the input file conforms to the expected number (especially when using/not using minimum_hit_groups):
-        # TODO: This can be done much better.
+        # First, check so the number of columns in the input file conforms to the expected number
         if not verbose_input:
             num_cols = len(line_proc) == 5  # original type of kraken2 output file
-            if minimum_hit_groups:
-                log.error('You specified --minimum_hit_groups {}, but didn\'t supply an input file that contain a minimizer hit groups column.')
-                sys.exit()
         else:
-            num_cols = len(line_proc) == 6  # 6 columns if the output was produced with the verbose version of kraken2 that outputs minimizer_groups
-            if not minimum_hit_groups:
-                log.error('The input file contains too many columns. Use --minimum_hit_groups if you want to use an input file that contain a minimizer hit groups column.')
-                sys.exit()
+            num_cols = len(line_proc) == 6  # 6 columns if the output was produced with the verbose version of kraken2 that outputs minimizer hit groups
 
         line_start = line_proc[0] in ['U', 'C']
         paired_data_1 = len(line_proc[3].split('|')) == 2
@@ -667,8 +661,8 @@ def write_file(filename, gz_output):
 
 def get_arguments():
     """
-    Wrapper fnc to get the command line arguments. Inserting this piece of code
-    into its own fnc for conda compatibility.
+    Wrapper function to get the command line arguments. Inserting this piece of code
+    into its own function for conda compatibility.
     """
 
     parser = argparse.ArgumentParser(
@@ -747,14 +741,28 @@ def stringmeup():
 
     # Was the input generated with https://github.com/danisven/kraken2 ?
     verbose_input = is_verbose_input(args.original_classifications_file)
+
+    # If so, output warnings if input doesn't contain minimizer hit groups
     if verbose_input:
-        log.info("The input file appears to contain minimizer_hit_groups.")
+        log.info("The input file appears to contain a column for minimizer hit groups.")
+
+        if not args.minimum_hit_groups:
+            log.warning('You didn\'t specify --minimum_hit_groups.')
+            log.warning('Will NOT reclassify based on minimizer hit groups, setting minimum_hit_groups=1 (lowest possible setting).')
+            args.minimum_hit_groups = 1
+
+    # If not, output warnings if user was planning to reclassify with minimizer hit groups
+    else:
+        if args.minimum_hit_groups:
+            log.warning('You specified minimum_hit_groups={}, but did not supply an input file with a column for minimizer hit groups.'.format(args.minimum_hit_groups))
+            log.warning('Will NOT reclassify based on minimizer hit groups.')
+            args.minimum_hit_groups = None
 
     # Perform a naive check of the input file
     validate_input_file(args.original_classifications_file, verbose_input, args.minimum_hit_groups)
 
     # If user provided names.dmp and nodes.dmp, create taxonomy tree from that,
-    # otherwise, create i from a pickled taxonomy file
+    # otherwise, create it from a pickled taxonomy file
     if args.names:
         taxonomy_tree = taxonomy.TaxonomyTree(names_filename=args.names, nodes_filename=args.nodes)
     else:
