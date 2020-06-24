@@ -710,9 +710,9 @@ def get_arguments():
     """
 
     parser = argparse.ArgumentParser(
-        prog='Confidence score reclassification',
-        usage='confidence_recal [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--output_verbose <FILE>] [--keep_unclassified] [--minimum_hit_groups INT] [--gz_output] [--help] confidence classifications',
-        description='Reclassification of reads (Kraken 2) by confidence score.')
+        prog='StringMeUp',
+        usage='stringmeup [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--output_verbose <FILE>] [--keep_unclassified] [--minimum_hit_groups INT] [--gz_output] [--help] confidence classifications',
+        description='A post-processing tool to reclassify Kraken 2 output based on the confidence score and/or minimum minimizer hit groups.')
     parser.add_argument(
         'confidence_threshold',
         metavar='confidence',
