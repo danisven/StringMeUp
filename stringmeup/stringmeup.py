@@ -711,7 +711,7 @@ def get_arguments():
 
     parser = argparse.ArgumentParser(
         prog='StringMeUp',
-        usage='stringmeup [--names <FILE> --nodes <FILE> | --taxonomy_file <FILE>] [--output_report <FILE>] [--output_classifications <FILE>] [--output_verbose <FILE>] [--keep_unclassified] [--minimum_hit_groups INT] [--gz_output] [--help] confidence classifications',
+        usage='stringmeup --names <FILE> --nodes <FILE> [--output_report <FILE>] [--output_classifications <FILE>] [--output_verbose <FILE>] [--keep_unclassified] [--minimum_hit_groups INT] [--gz_output] [--help] confidence classifications',
         description='A post-processing tool to reclassify Kraken 2 output based on the confidence score and/or minimum minimizer hit groups.')
     parser.add_argument(
         'confidence_threshold',
@@ -742,19 +742,16 @@ def get_arguments():
         metavar='FILE',
         type=str,
         help='File to send verbose output to. This file will contain, for each read, (1) original classification, (2) new classification, (3) original confidence, (4), new confidence (5), original taxa name (6), new taxa name, (7) original rank, (8) new rank, (9) distance travelled (how many nodes was it lifted upwards in the taxonomy).')
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
+    parser.add_argument(
         '--names',
         metavar='FILE',
-        help='taxonomy names dump file (names.dmp)')
-    group.add_argument(
-        '--taxonomy_file',
-        metavar='FILE',
-        help='Path to a pickle file containing a taxonomy tree created through the TaxonomyTree.save_taxonomy function (taxonomy.py).')
+        required=True,
+        help='Taxonomy names dump file (names.dmp)')
     parser.add_argument(
         '--nodes',
         metavar='FILE',
-        help='taxonomy nodes dump file (nodes.dmp)')
+        required=True,
+        help='Taxonomy nodes dump file (nodes.dmp)')
     parser.add_argument(
         '--minimum_hit_groups',
         metavar='INT',
@@ -774,9 +771,6 @@ def stringmeup():
 
     # Get the CL arguments
     args = get_arguments()
-
-    if args.names and args.nodes is None:
-        parser.error("--names requires --nodes to be set as well.")
 
     # Some initial setup
     taxa_lineages = {}
@@ -812,12 +806,8 @@ def stringmeup():
     # Perform a naive check of the input file
     validate_input_file(args.original_classifications_file, verbose_input, args.minimum_hit_groups, paired_input)
 
-    # If user provided names.dmp and nodes.dmp, create taxonomy tree from that,
-    # otherwise, create it from a pickled taxonomy file
-    if args.names:
-        taxonomy_tree = taxonomy.TaxonomyTree(names_filename=args.names, nodes_filename=args.nodes)
-    else:
-        taxonomy_tree = taxonomy.TaxonomyTree(pickled_taxonomy_filename=args.taxonomy_file)
+    # Create a TaxonomyTree from the user provided names.dmp and nodes.dmp files
+    taxonomy_tree = taxonomy.TaxonomyTree(names_filename=args.names, nodes_filename=args.nodes)
 
     # Filehandles-to-be
     o = None
