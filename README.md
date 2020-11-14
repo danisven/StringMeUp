@@ -1,6 +1,8 @@
 # StringMeUp
 
-A post-processing tool to reclassify [Kraken 2] output based on the confidence score and/or minimum minimizer hit groups.
+A post-processing tool for [Kraken 2] read classifications. Run Kraken 2 **once** and re-classify the reads with any confidence score stringency of your choice afterwards, saving you lots of compute time. Creates Kraken 2 style report and read classification files.
+
+For additional insight into your Kraken 2 classifications, try out [KrakMeOpen] - a downstream analysis toolkit for Kraken 2 classification quality metrics.
 
 ## Installation
 StringMeUp is available to install through conda. Simply run the following command to install it:
@@ -61,4 +63,5 @@ This option requires an input file that was produced with my [fork] of Kraken 2.
 Add `--minimum_hit_groups <INT>` to the command. A read can only be considered classified if the number of minimizer hit groups is at or above the minimum_hit_groups setting.
 
 [Kraken 2]: https://github.com/DerrickWood/kraken2
+[KrakMeOpen]: https://github.com/danisven/KrakMeOpen
 [fork]: https://github.com/danisven/kraken2
