@@ -2,7 +2,6 @@
 
 import argparse
 import logging
-import datetime
 from collections import namedtuple
 from dataclasses import dataclass, field
 from os import path
@@ -163,9 +162,6 @@ class TaxonomyTree(object):
         root_children.remove(1)
         self.taxonomy[1].parent = None
         self.taxonomy[1].children = root_children
-        self.taxonomy['timestamp'] = datetime.datetime.now()
-        self.taxonomy['nodes_filename'] = path.abspath(self.nodes_filename)
-        self.taxonomy['names_filename'] = path.abspath(self.names_filename)
         log.info("Taxonomy tree built.")
 
 
@@ -184,25 +180,15 @@ class TaxonomyTree(object):
         if len(tax_id_dict) != len(scientific_names_list):
             log.warning('You entered duplicated names in the input list for translate2taxid.')
 
-        if self.taxonomy:
-            for tax_id in self.taxonomy:
-                if not isinstance(tax_id, int):
-                    # In this case we are getting one of the keys
-                    # ['timestamp', 'nodes_filename', 'names_filename'] and
-                    # should continue to look for tax_ids
-                    continue
-                if self.taxonomy[tax_id].name in tax_id_dict:
-                    name = self.taxonomy[tax_id].name
-                    tax_id_dict[name].append(tax_id)
-                else:
-                    # continue search
-                    continue
+        for tax_id in self.taxonomy:
+            if self.taxonomy[tax_id].name in tax_id_dict:
+                name = self.taxonomy[tax_id].name
+                tax_id_dict[name].append(tax_id)
+            else:
+                # continue search
+                continue
 
-            return tax_id_dict
-
-        else:
-            log.exception('You have not built the taxonomy tree yet.')
-            raise TaxonomyTreeException('You have not built the taxonomy tree yet.')
+        return tax_id_dict
 
 
     def _get_property(self, tax_id, property):
