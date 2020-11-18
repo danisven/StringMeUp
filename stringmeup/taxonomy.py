@@ -41,7 +41,7 @@ class TaxonomyTreeException(Exception):
     pass
 
 
-class TaxonomyTree(object):
+class TaxonomyTree:
     """
     Creates a representation of the taxonomy in the files names.dmp and
     nodes.dmp of a kraken2 database.
@@ -50,12 +50,23 @@ class TaxonomyTree(object):
     """
 
     def __init__(self, nodes_filename, names_filename):
-        self.taxonomy = {}
-        self.byranks = {}
-        self.leaves = set()
         self.nodes_filename = nodes_filename
         self.names_filename = names_filename
-        self.wanted_name_types = set(['scientific name', 'genbank common name'])
+        self.wanted_name_types = set(
+            ['scientific name', 'genbank common name'])
+
+        # Main data structure
+        self.taxonomy = {}
+
+        self.byranks = {}
+        self.leaves = set()
+
+        # "Memory" data structure to be populated at function calls
+        # For faster response in case of same query is asked again
+        self.lineages = {}
+        self.lca_mappings = {}
+
+        # Add nodes to self.taxonomy
         self.construct_tree()
 
     def construct_tree(self):
@@ -366,6 +377,11 @@ class TaxonomyTree(object):
         lineage_dict = {}
 
         for tax_id in tax_id_list:
+            if tax_id in self.lineages:
+                # Lineage has already been calculated, retrieve it
+                lineage_dict[tax_id] = self.lineages[tax_id]
+                continue
+
             lineage = [tax_id]
             node = self.get_node([tax_id])[tax_id]
 
@@ -375,6 +391,9 @@ class TaxonomyTree(object):
 
             lineage.reverse()
             lineage_dict[tax_id] = lineage
+
+            # Save lineage for faster response next time
+            self.lineages[tax_id] = lineage
 
         return lineage_dict
 
@@ -446,20 +465,32 @@ class TaxonomyTree(object):
         Get the tax_id of the lowest common ancestor (LCA) of two tax_ids.
         """
         lca = None
-        lineages = self.get_lineage([tax_id_1, tax_id_2])
-        paired_lineages = zip(lineages[tax_id_1], lineages[tax_id_2])
 
-        for i, lineage_pairs in enumerate(paired_lineages):
-            if i == 0:
-                # Both must start at root
-                assert lineage_pairs[0] == 1 and lineage_pairs[1] == 1
-                lca = lineage_pairs[0]
-                continue
+        # Extra calcs to check for lca from self.lca_mappings
+        tax_id_small = min(tax_id_1, tax_id_2)
+        tax_id_large = max(tax_id_1, tax_id_2)
 
-            if lineage_pairs[0] == lineage_pairs[1]:
-                lca = lineage_pairs[0]
-            else:
-                break
+        # self.lca_mappings is ordered... smallest tax_id always goes first
+        if tax_id_small in self.lca_mappings:
+            if tax_id_large in self.lca_mappings[tax_id_small]:
+                lca = self.lca_mappings[tax_id_small][tax_id_large]
+        else:
+            self.lca_mappings[tax_id_small] = {}
+
+        if lca is None:
+            # Get lineages and convert to sets for fast operation
+            lineages = self.get_lineage([tax_id_1, tax_id_2])
+            lineage_1 = set(lineages[tax_id_1])
+            lineage_2 = set(lineages[tax_id_2])
+
+            # Get only the common tax_ids between the lineages of tax_id 1 and 2
+            common_lineage = lineage_1.intersection(lineage_2)
+
+            # The LCA will be the tax_id @ index (num(common_taxIDs) - 1)
+            lca = lineages[tax_id_1][len(common_lineage) - 1]
+
+            # Save LCA for faster response next time
+            self.lca_mappings[tax_id_small][tax_id_large] = lca
 
         return lca
 
