@@ -275,33 +275,38 @@ class TaxonomyTree:
             parent_dict[tax_id] = self._get_property(tax_id, 'parent')
         return parent_dict
 
-    def get_distance(self, tax_id_ancestor, tax_id):
+    def get_distance(self, tax_id_1, tax_id_2):
         """
-        Find the distance (number of steps) between the
-        ancestor (tax_id_ancestor) and the taxon (tax_id).
+        Return the distance between two tax_ids. The distance is defined as
+        the number of edges that need to be traversed to get from tax_id_1 to
+        tax_id_2.
+
+        Distance between a parent and child is 1, distance between two genera
+        in the same family (where the family node is the direct parent of both
+        genera) is 2, etc.
+
+        All edges between two tax_ids are counted, so the distance between two
+        ranks in one part of the tree can be different from that in another
+        part of the tree (depending on tree structure).
         """
-        lineage = self.get_lineage([tax_id])[tax_id]
-        try:
-            assert tax_id_ancestor in lineage
-        except AssertionError:
-            log.exception('tax_id {ancestor} is not an ancestor of {tax_id}.'.format(
-                ancestor=tax_id_ancestor, tax_id=tax_id))
-            raise
 
-        ancestor_index = lineage.index(tax_id_ancestor)
-        tax_id_index = lineage.index(tax_id)
-        distance = tax_id_index - ancestor_index
+        def one_way_distance(tax_id_ancestor, tax_id):
+            """
+            Find the distance (number of steps) between the
+            ancestor (tax_id_ancestor) and the taxon (tax_id).
+            """
 
-        return distance
+            # Lineage of the descendant tax_id (of which ancestor tax_id is part of)
+            lineage = self.get_lineage([tax_id])[tax_id]
 
-    def get_distance_generic(self, tax_id_1, tax_id_2):
-        """
-        Fnc get_distance() calculates a distance between an ancestor and a
-        descendant, and might be legacy.
+            # The indices of both tax_ids in the lineage
+            ancestor_index = lineage.index(tax_id_ancestor)
+            tax_id_index = lineage.index(tax_id)
 
-        Creating this fnc for a general case where we want to know how many
-        edges we need to traverse in order to get from tax_id_1 to tax_id_2.
-        """
+            distance = tax_id_index - ancestor_index
+
+            return distance
+
         distance = None
 
         # Extra calcs to check for distance from self.distances
@@ -311,7 +316,7 @@ class TaxonomyTree:
         # self.distances is ordered... smallest tax_id always goes first
         if tax_id_small in self.distances:
             if tax_id_large in self.distances[tax_id_small]:
-                lca = self.distances[tax_id_small][tax_id_large]
+                distance = self.distances[tax_id_small][tax_id_large]
         else:
             self.distances[tax_id_small] = {}
 
@@ -322,48 +327,14 @@ class TaxonomyTree:
             lca = self.get_lca(tax_id_1, tax_id_2)
 
             # Sum of distances between both tax_ids and the LCA makes the total distance
-            distance_1 = self.get_distance(lca, tax_id_1)
-            distance_2 = self.get_distance(lca, tax_id_2)
+            distance_1 = one_way_distance(lca, tax_id_1)
+            distance_2 = one_way_distance(lca, tax_id_2)
             distance = distance_1 + distance_2
 
-        # The lineage of the clade, make a set of it
-        lineage = set(self.taxonomy_tree.get_lineage([clade_id])[clade_id])
-        lineage.remove(clade_id) # Only want tax_ids above the clade tax_id
+            # Save distance for faster response next time
+            self.distances[tax_id_small][tax_id_large] = distance
 
-            # The tax_id is an ancestor of the clade root
-            if tax_id in lineage:
-
-                # The distance between the clade root and the ancestor
-                distance = self.taxonomy_tree.get_distance(tax_id, clade_id)
-
-            # Not an ancestor, must compute two distances and add them together
-            else:
-
-                # Get the lineage of the tax_id
-                tax_id_lineage = self.taxonomy_tree.get_lineage([tax_id])[tax_id]
-                tax_id_lineage.reverse()  # Flip the lineage so that it goes from leaf to root
-
-                # Loop to find the lowest common ancestor (lca) of the clade id and
-                # the tax_id that we are currently getting the distance to
-                lca = None
-                for ancestor in tax_id_lineage:
-                    if ancestor in lineage:
-                        lca = ancestor
-                        break
-
-                # Find the distance between the lca and the clade id
-                clade_lca_distance = self.taxonomy_tree.get_distance(ancestor, clade_id)
-
-                # Find the distance between the lca and the tax_id currently
-                # being investigated
-                tax_id_lca_distance = self.taxonomy_tree.get_distance(ancestor, tax_id)
-
-                # The distance between the clade id and the tax_id is the sum of
-                # the two distances
-                distance = clade_lca_distance + tax_id_lca_distance
-
-            # Save the distance between the clade id and the tax_id
-            distance_dict[tax_id] = distance
+        return distance
 
     def get_rank(self, tax_id_list):
         """
