@@ -1,3 +1,5 @@
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/stringmeup/badges/installer/conda.svg)](https://conda.anaconda.org/bioconda)
+
 # StringMeUp
 
 A post-processing tool for [Kraken 2] read classifications. Run Kraken 2 **once** and re-classify the reads with any confidence score stringency of your choice afterwards, saving you lots of compute time. Creates Kraken 2 style report and read classification files.
@@ -5,6 +7,7 @@ A post-processing tool for [Kraken 2] read classifications. Run Kraken 2 **once*
 For additional insight into your Kraken 2 classifications, try out [KrakMeOpen] - a downstream analysis toolkit for Kraken 2 classification quality metrics.
 
 ## Installation
+
 StringMeUp is available to install through conda. Simply run the following command to install it:
 
 `conda install -c conda-forge -c bioconda stringmeup`
