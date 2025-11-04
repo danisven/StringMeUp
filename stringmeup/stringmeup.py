@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"  # Major bug fix in confidence calculation (ambiguous k-mers)
 
 import argparse
 import operator
@@ -10,6 +10,7 @@ import sys
 from stringmeup import taxonomy
 from dataclasses import dataclass
 from os import path
+from typing import Dict, Set, Tuple, Optional, List, TextIO
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -39,6 +40,7 @@ class ReadClassification:
     classified: bool = False
     max_confidence = None
     minimizer_hit_groups = None
+    ambiguous_kmers: int = 0  # Count of ambiguous k-mers (A:X in Kraken2 output)
 
 
 @dataclass
@@ -53,7 +55,7 @@ class ReportNode:
     offset: int
 
 
-def validate_input_file(putative_classifications_file, verbose_input, minimum_hit_groups, paired_input):
+def validate_input_file(putative_classifications_file: str, verbose_input: bool, minimum_hit_groups: Optional[int], paired_input: bool) -> None:
     """
     Perform simple validation of the input file.
     """
@@ -82,10 +84,15 @@ def validate_input_file(putative_classifications_file, verbose_input, minimum_hi
 
         # If the data is paired
         if paired_input:
-            # Must be information on both sides of the pipe character
-            data_col_1 = len(line_proc[3].split('|')) == 2
+            # Length field (index 3) should still be an integer
+            try:
+                int(line_proc[3])
+            except (ValueError, TypeError, IndexError):
+                data_col_1 = False
+            else:
+                data_col_1 = True
 
-            # If the data is paired in the 3rd column, it must also be paired in the last column
+            # K-mer string (last column) must contain |:| delimiter with data on both sides
             if "|" in line_proc[-1]:
                 data_col_2 = len(line_proc[-1].split('|:|')) == 2
             else:
@@ -95,7 +102,7 @@ def validate_input_file(putative_classifications_file, verbose_input, minimum_hi
         else:
             try:
                 int(line_proc[3])
-            except:
+            except (ValueError, TypeError, IndexError):
                 data_col_1 = False
             else:
                 data_col_1 = True
@@ -119,7 +126,7 @@ def validate_input_file(putative_classifications_file, verbose_input, minimum_hi
             sys.exit()
 
 
-def is_paired_input(classifications_file):
+def is_paired_input(classifications_file: str) -> bool:
     """
     Returns true if input file appears to contain paired read data.
     """
@@ -128,12 +135,12 @@ def is_paired_input(classifications_file):
         line_proc = line.strip()
         line_proc = line_proc.split('\t')
 
-        # If column 4 contains a pipe character "|", the data is paired
-        if "|" in line_proc[3]:
+        # If k-mer string (index 4) contains a pipe character "|", the data is paired
+        if "|" in line_proc[4]:
             return True
 
 
-def is_verbose_input(classifications_file):
+def is_verbose_input(classifications_file: str) -> bool:
     """
     Returns true if input file consists of 6 columns instead of 5.
     """
@@ -148,15 +155,20 @@ def is_verbose_input(classifications_file):
             return False
 
 
-def process_kmer_string(kmer_info_string, paired_input):
+def process_kmer_string(kmer_info_string: str, paired_input: bool) -> Tuple[Dict[int, int], int]:
     """
     Process a kmer info string (last column of a Kraken 2 output file), so that
-    we get a dictionary mapping of tax_ids to total sum of kmer hits.
+    we get a dictionary mapping of tax_ids to total sum of kmer hits, plus the count
+    of ambiguous k-mers.
+
     Returns:
-    {tax_id_#1: X kmer hits,
-     tax_id_#2: Y kmer hits,
-     ...
-     tax_id_#N: Z kmer hits}
+        Tuple of (taxa_kmer_dict, ambiguous_kmer_count)
+        - taxa_kmer_dict: {tax_id_#1: X kmer hits, tax_id_#2: Y kmer hits, ...}
+        - ambiguous_kmer_count: Total count of ambiguous k-mers (marked with 'A' in output)
+
+    CRITICAL: Ambiguous k-mers MUST be counted separately and added to the total denominator
+    to match Kraken2's confidence calculation. Kraken2 includes ambiguous k-mers in total_kmers
+    even though they cannot be queried against the database.
     """
     kmer_info_string = kmer_info_string.split()
 
@@ -164,175 +176,211 @@ def process_kmer_string(kmer_info_string, paired_input):
     if paired_input:
         kmer_info_string.remove('|:|')
 
-    # Messy list comprehension. Converts all "taxa":"num_kmer" string pairs
-    # into integer tuples like (taxa, num_kmers), and saves them in a list.
-    # Ambiguous kmers are not processed (discarded).
-    kmer_classifications = [
-        (int(x[0]), int(x[1])) for x in (
-            kmer_info.split(':') for kmer_info in kmer_info_string)
-        if x[0] != 'A']
-
-    # Further processes the (taxa, num_kmers) tuples into a dict where each
-    # tax_id stores the total sum of kmer hits to that tax_id.
+    # Process all "taxa":"num_kmer" string pairs, including ambiguous k-mers marked with 'A'
+    # Structural delimiters like '-:-' (reading frame borders) are skipped
     taxa_kmer_dict = {}
-    for kmer_info in kmer_classifications:
-        if kmer_info[0] not in taxa_kmer_dict:
-            taxa_kmer_dict[kmer_info[0]] = kmer_info[1]
+    ambiguous_kmer_count = 0
+
+    for kmer_info in kmer_info_string:
+        parts = kmer_info.split(':')
+
+        # Skip malformed entries
+        if len(parts) != 2:
+            continue
+
+        tax_id_str, count_str = parts
+
+        # Skip reading frame borders (used in translated search)
+        if tax_id_str == '-':
+            continue
+
+        try:
+            count = int(count_str)
+        except ValueError:
+            continue
+
+        # Handle ambiguous k-mers separately
+        if tax_id_str == 'A':
+            ambiguous_kmer_count += count
         else:
-            taxa_kmer_dict[kmer_info[0]] += kmer_info[1]
+            # Regular tax_id
+            try:
+                tax_id = int(tax_id_str)
+                if tax_id not in taxa_kmer_dict:
+                    taxa_kmer_dict[tax_id] = count
+                else:
+                    taxa_kmer_dict[tax_id] += count
+            except ValueError:
+                # Skip if tax_id is not a valid integer
+                continue
 
-    return taxa_kmer_dict
+    return taxa_kmer_dict, ambiguous_kmer_count
 
 
-def reclassify_read(read, confidence_threshold, taxonomy_tree, verbose_input, minimum_hit_groups, taxa_lineages, paired_input):
+def _calculate_max_confidence(taxa_kmer_dict: Dict[int, int], total_kmer_hits: int) -> float:
     """
-    Sums the number of kmers that hit in the clade rooted at "current_node",
-    and divides it with the total number of kmers queried against the database:
-    confidence = clade_kmer_hits / total_kmer_hits
+    Calculate the maximum possible confidence for a read.
+    This is the sum of all k-mers assigned to taxa (excluding 0) divided by total k-mers.
+    """
+    assigned_taxa_set = set([tax_id for tax_id in taxa_kmer_dict.keys() if tax_id != 0])
+    total_hits = sum(taxa_kmer_dict[tax_id] for tax_id in assigned_taxa_set)
+    return total_hits / total_kmer_hits
 
-    If the confidence at a specific node is < confidence_threshold, we go one
-    step up the taxonomy (to the parent node) and recalculates the confidence.
-    This is repeated until confidence >= confidence_threshold.
 
-    In this function it's envisionable to include other parameters for the
-    classification... Right now I'm only considering the confidence score
-    and minimum hit groups.
+def _check_early_termination(max_confidence: float, confidence_threshold: float,
+                              verbose_input: bool, minimizer_hit_groups: int,
+                              minimum_hit_groups: int) -> bool:
+    """
+    Check if the read is "doomed to fail" classification based on:
+    1. Maximum possible confidence is below threshold
+    2. Minimizer hit groups (if using verbose input) is below minimum
+
+    Returns True if the read cannot possibly meet classification criteria.
+    """
+    if max_confidence < confidence_threshold:
+        return True
+
+    if verbose_input and minimizer_hit_groups < minimum_hit_groups:
+        return True
+
+    return False
+
+
+def _get_cached_lineage(tax_id: int, taxa_lineages: Dict[int, List[int]],
+                        taxonomy_tree: taxonomy.TaxonomyTree) -> List[int]:
+    """
+    Get the lineage for a tax_id, using cache if available, otherwise fetch and cache it.
+    """
+    if tax_id in taxa_lineages:
+        return taxa_lineages[tax_id]
+    else:
+        lineage = taxonomy_tree.get_lineage([tax_id])[tax_id]
+        # Save lineage so we don't have to get it from taxonomy_tree more than once.
+        # Keep as list to maintain consistency with taxonomy_tree.get_lineage() return type.
+        taxa_lineages[tax_id] = lineage
+        return lineage
+
+
+def _calculate_clade_confidence(current_node: int, assigned_taxa_set: Set[int],
+                                 taxa_kmer_dict: Dict[int, int], total_kmer_hits: int,
+                                 taxa_lineages: Dict[int, List[int]],
+                                 taxonomy_tree: taxonomy.TaxonomyTree) -> Tuple[float, Set[int], Set[int]]:
+    """
+    Calculate confidence at current node by summing k-mers from all descendants.
+
+    Returns:
+        - confidence score at this node
+        - set of tax_ids found in this clade
+        - updated assigned_taxa_set with clade taxa removed
+    """
+    num_hits_within_clade = 0
+    taxa_in_clade = set()
+
+    for tax_id in assigned_taxa_set:
+        lineage = _get_cached_lineage(tax_id, taxa_lineages, taxonomy_tree)
+
+        # If current_node is in the lineage of tax_id, then tax_id is a descendant
+        if current_node in lineage:
+            taxa_in_clade.add(tax_id)
+            num_hits_within_clade += taxa_kmer_dict[tax_id]
+
+    # Remove counted taxa from the search set
+    updated_assigned_taxa_set = assigned_taxa_set - taxa_in_clade if taxa_in_clade else assigned_taxa_set
+
+    # Early exit optimization: if all taxa counted, sum all k-mers
+    if not updated_assigned_taxa_set:
+        num_hits_within_clade = sum(taxa_kmer_dict[tax_id] for tax_id in taxa_kmer_dict.keys() if tax_id != 0)
+
+    confidence = num_hits_within_clade / total_kmer_hits
+    return confidence, taxa_in_clade, updated_assigned_taxa_set
+
+
+def reclassify_read(read: ReadClassification, confidence_threshold: float, taxonomy_tree: taxonomy.TaxonomyTree, verbose_input: bool, minimum_hit_groups: int, taxa_lineages: Dict[int, List[int]], paired_input: bool) -> Tuple[ReadClassification, Dict[int, List[int]]]:
+    """
+    Reclassifies a read by traversing up the taxonomy tree until confidence threshold is met.
+
+    Algorithm:
+    1. Calculate confidence = (k-mers in clade) / (total k-mers including ambiguous)
+    2. If confidence >= threshold, classify to current node
+    3. Otherwise, move to parent node and repeat
+    4. Stop at root or when confidence threshold is met
+
+    CRITICAL: Must match Kraken2's confidence calculation, which includes ambiguous k-mers
+    in the denominator even though they cannot be queried against the database.
     """
     # Process the kmer string into a dict of {tax_id: #kmers} key, value pairs
-    taxa_kmer_dict = process_kmer_string(read.kmer_string, paired_input)
+    # CRITICAL: ambiguous_kmer_count must be added to total for correct confidence calculation
+    taxa_kmer_dict, ambiguous_kmer_count = process_kmer_string(read.kmer_string, paired_input)
+
+    # Store ambiguous count in read object
+    read.ambiguous_kmers = ambiguous_kmer_count
 
     # Make the current node the same as the original classification
     read.current_node = read.original_taxid
 
-    # The total number of kmers that were interrogated against the
-    # database (non-ambiguous):
-    total_kmer_hits = sum(taxa_kmer_dict.values())
+    # Total number of k-mers - MUST include ambiguous to match Kraken2
+    # This represents ALL k-mers in the read, not just those queried
+    total_kmer_hits = sum(taxa_kmer_dict.values()) + ambiguous_kmer_count
 
-    # Only interested in tax_ids that are in the database. A '0' signifies that
-    # the kmer could not be assigned to any tax_id (missing from database).
-    assigned_taxa_set = set(
-        [tax_id for tax_id in taxa_kmer_dict.keys() if tax_id != 0])
+    # Handle edge case where read has no k-mers (empty or all ambiguous)
+    if total_kmer_hits == 0:
+        read.reclassified_taxid = 0
+        read.classified = False
+        read.original_conf = 0.0
+        read.recalculated_conf = 0.0
+        read.max_confidence = 0.0
+        return read, taxa_lineages
 
-    # Make a quick check to see if it is even possible to obtain the confidence
-    # needed to make a classification. If it isn't we don't have to go through
-    # the hassle of calculating the confidence at all parent nodes. Potentially
-    # saving us a lot of time.
-    doomed_to_fail = False
-    total_hits = sum(taxa_kmer_dict[tax_id] for tax_id in assigned_taxa_set)
-    max_confidence = total_hits / total_kmer_hits
+    # Only interested in tax_ids that are in the database (exclude 0)
+    assigned_taxa_set = set([tax_id for tax_id in taxa_kmer_dict.keys() if tax_id != 0])
+
+    # Check if classification is possible (early termination optimization)
+    max_confidence = _calculate_max_confidence(taxa_kmer_dict, total_kmer_hits)
     read.max_confidence = max_confidence
 
-    # The read can't achieve a confidence high enough, so we mark it
-    if max_confidence < confidence_threshold:
-        doomed_to_fail = True
+    doomed_to_fail = _check_early_termination(
+        max_confidence, confidence_threshold, verbose_input,
+        read.minimizer_hit_groups or 0, minimum_hit_groups
+    )
 
-    # Filter minimizer_hit_groups
-    if verbose_input:
-        if read.minimizer_hit_groups < minimum_hit_groups:
-            doomed_to_fail = True
-
-    # The nr of kmers that hit within the clade rooted at the current node:
-    num_hits_within_clade = 0
-
+    # Traverse up the taxonomy tree until confidence threshold is met
     while not read.classified:
-        taxa_in_clade = set()
+        # Calculate confidence at current node
+        confidence, taxa_in_clade, assigned_taxa_set = _calculate_clade_confidence(
+            read.current_node, assigned_taxa_set, taxa_kmer_dict,
+            total_kmer_hits, taxa_lineages, taxonomy_tree
+        )
 
-        # For each tax_id that kmers in the read were assigned to:
-        for tax_id in assigned_taxa_set:
+        read.recalculated_conf = confidence
 
-            # Get the lineage (all ancestors including itself) for the tax_id:
-            if tax_id in taxa_lineages:
-                lineage = taxa_lineages[tax_id]
-            else:
-                lineage = taxonomy_tree.get_lineage([tax_id])[tax_id]
-
-                # Save lineage so we don't have to get it from taxonomy_tree
-                # more than once. Also make it into a set, which is faster to
-                # query (the order of tax_ids in the lineage is not important
-                # here).
-                taxa_lineages[tax_id] = set(lineage)
-
-            # If the currently classified (read.current_node) tax_id is in the
-            # lineage (parents) of tax_id, then tax_id must be in the clade
-            # rooted at read.current_node - i.e. tax_id is a descendant of
-            # current_node.
-            if read.current_node in lineage:
-
-                # There is no need to get the lineage of tax_id in future
-                # iterations since it will always be in the clade rooted at
-                # read.current_node (we only ever go up in the taxonomy).
-                # Remember which tax_ids we have counted, so we can remove them
-                # from the set, outside of the loop:
-                taxa_in_clade.add(tax_id)
-
-                # Instead, we just add the kmers that hit tax_id to the total
-                # hits at the clade:
-                num_hits_within_clade += taxa_kmer_dict[tax_id]
-
-        # Remove the already counted tax_ids:
-        if taxa_in_clade:
-            assigned_taxa_set -= taxa_in_clade
-
-        # The confidence value for the read pair classification at the current
-        # taxonomic level:
-        read.recalculated_conf = num_hits_within_clade / total_kmer_hits
-
-        # Set the original confidence score
+        # Set original confidence on first iteration
         if not read.original_conf:
             read.original_conf = read.recalculated_conf
 
-            # If we can't achieve the confidence score cutoff, now is the time
-            # to exit the loop and return the read (since we have calculated
-            # the original confidence).
+            # Exit early if we know classification will fail
             if doomed_to_fail:
                 read.recalculated_conf = max_confidence
                 read.reclassified_taxid = 0
                 return read, taxa_lineages
 
-        # If the confidence at this node is sufficient, we classify it to
-        # the current node (TaxID).
+        # Check if confidence threshold is met
         if read.recalculated_conf >= confidence_threshold:
             read.classified = True
             read.reclassified_taxid = read.current_node
             return read, taxa_lineages
 
-        # If the current node is the root, we stop (can't go higher up in the
-        # taxonomy).
+        # Check if we've reached the root (can't go higher)
         elif read.current_node == 1:
+            read.classified = False
             read.reclassified_taxid = 0
             return read, taxa_lineages
 
-        # Otherwise, set the current_node to the parent and keep going.
+        # Move to parent node and continue
         else:
-            read.current_node = taxonomy_tree.get_parent(
-                [read.current_node])[read.current_node]
+            read.current_node = taxonomy_tree.get_parent([read.current_node])[read.current_node]
 
 
-def read_kraken_output():
-    """
-    This should work to read classifications from a kraken 2 output file. It's
-    not complete, but the backbone is there. The point is, we should not have
-    to run reclassification in order to produce a report file - we shuold be
-    able to just read an output file and work with the classifications as they
-    are. Could also just modify the main loop.
-    """
-    tax_dict = {'hits_at_node': {}, 'hits_at_clade': {}}
-    i = 0
-    with open('Ki-1974-23-291.kraken2', 'r') as f:
-        for line in f:
-            if line.startswith('C'):
-                l = line.strip().split('\t')
-                tax_id = int(l[2])
-                if tax_id not in tax_dict['hits_at_node']:
-                    tax_dict['hits_at_node'][tax_id] = 1
-                else:
-                    tax_dict['hits_at_node'][tax_id] += 1
-            i += 1
-            if i % report_frequency == 0:
-                print('Processed {} lines'.format(i))
-
-
-def get_kraken2_report_content(tax_reads, taxonomy_tree, total_reads):
+def get_kraken2_report_content(tax_reads: Dict[str, Dict[int, int]], taxonomy_tree: taxonomy.TaxonomyTree, total_reads: int) -> List[ReportNode]:
     """
     First calculates the cumulative clade read count (i.e. for each node, how
     many reads are classified to the clades rooted at that node).
@@ -464,7 +512,7 @@ def get_kraken2_report_content(tax_reads, taxonomy_tree, total_reads):
     return report_node_list
 
 
-def format_kraken2_report_row(report_node):
+def format_kraken2_report_row(report_node: ReportNode) -> str:
     """
     Formats the row that will be output in the kraken 2 style report. Input
     is an instance of ReportNode.
@@ -489,7 +537,7 @@ def format_kraken2_report_row(report_node):
     return report_row
 
 
-def make_kraken2_report(tax_reads, taxonomy_tree, total_reads, output_report):
+def make_kraken2_report(tax_reads: Dict[str, Dict[int, int]], taxonomy_tree: taxonomy.TaxonomyTree, total_reads: int, output_report: Optional[str]) -> None:
     """
     Gets the information that should be printed from
     get_kraken2_report_content. Formats the information and prints it to file
@@ -521,7 +569,7 @@ def make_kraken2_report(tax_reads, taxonomy_tree, total_reads, output_report):
             sys.stdout.write(report_row + '\n')
 
 
-def get_verbose_output(read, taxonomy_tree):
+def get_verbose_output(read: ReadClassification, taxonomy_tree: taxonomy.TaxonomyTree) -> ReadClassification:
     """
     Gets more information about the reclassification of a read. This is for
     the output_verbose option.
@@ -563,7 +611,7 @@ def get_verbose_output(read, taxonomy_tree):
     return read
 
 
-def create_read(kraken2_read, verbose_input=False):
+def create_read(kraken2_read: str, verbose_input: bool = False) -> ReadClassification:
     """
     Creates an instance of ReadClassification dataclass, that holds
     information about the read and its classification.
@@ -641,6 +689,11 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, args, report_frequency, t
             # about the read and its classification
             read = create_read(read_pair, verbose_input)
 
+            # Validate that classified reads have a non-zero tax_id
+            if read.original_taxid == 0:
+                log.warning('Read {} is marked as classified but has tax_id=0. Skipping.'.format(read.id))
+                continue
+
             # Reclassify the read pair based on confidence
             read, taxa_lineages = reclassify_read(
                 read,
@@ -674,7 +727,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, args, report_frequency, t
 
         # Keep track of progress
         i += 1
-        if i % report_frequency == 0:
+        if i > 0 and i % report_frequency == 0:
             log.info('Processed {} reads...'.format(i))
 
     log.info('Done processing reads. They were {} in total.'.format(i))
@@ -683,7 +736,7 @@ def main_loop(f_handle, tax_reads_dict, taxonomy_tree, args, report_frequency, t
     make_kraken2_report(tax_reads_dict, taxonomy_tree, i, args.output_report)  # i is used to calculate the ratio of classified reads (col 1 in output file).
 
 
-def read_file(filename):
+def read_file(filename: str) -> TextIO:
     """
     Wrapper to read either gzipped or ordinary text file input.
     """
@@ -693,7 +746,7 @@ def read_file(filename):
         return open(filename, 'r')
 
 
-def write_file(filename, gz_output):
+def write_file(filename: str, gz_output: bool) -> TextIO:
     """
     Wrapper to write either gzipped or ordinary text file output.
     """
@@ -703,7 +756,7 @@ def write_file(filename, gz_output):
         return open(filename, 'w')
 
 
-def get_arguments():
+def get_arguments() -> argparse.Namespace:
     """
     Wrapper function to get the command line arguments. Inserting this piece of code
     into its own function for conda compatibility.
@@ -767,10 +820,15 @@ def get_arguments():
     return args
 
 
-def stringmeup():
+def stringmeup() -> None:
 
     # Get the CL arguments
     args = get_arguments()
+
+    # Validate confidence threshold is in valid range [0, 1]
+    if not 0 <= args.confidence_threshold <= 1:
+        log.error('Confidence threshold must be between 0 and 1, got {:.2f}'.format(args.confidence_threshold))
+        sys.exit(1)
 
     # Some initial setup
     taxa_lineages = {}
@@ -817,22 +875,29 @@ def stringmeup():
     with read_file(args.original_classifications_file) as f:
         log.info('Processing read classifications from "{file}".'.format(file=path.abspath(args.original_classifications_file)))
 
-        # TODO: make sure output files are writable
         # If user wants to save the read classifications to file, open file
         if args.output_classifications:
             if args.gz_output:
                 if not args.output_classifications.endswith('.gz'):
                     args.output_classifications += '.gz'
-            log.info('Saving reclassified reads in {}.'.format(args.output_classifications))
-            o = write_file(args.output_classifications, args.gz_output)
+            try:
+                log.info('Saving reclassified reads in {}.'.format(args.output_classifications))
+                o = write_file(args.output_classifications, args.gz_output)
+            except (IOError, OSError, PermissionError) as e:
+                log.error('Cannot open output classifications file "{}": {}'.format(args.output_classifications, e))
+                sys.exit(1)
 
         # If user wants to save the verbose classification output to file, open file
         if args.output_verbose:
             if args.gz_output:
                 if not args.output_verbose.endswith('.gz'):
                     args.output_verbose += '.gz'
-            log.info('Saving verbose classification information in {}.'.format(args.output_verbose))
-            v = write_file(args.output_verbose, args.gz_output)
+            try:
+                log.info('Saving verbose classification information in {}.'.format(args.output_verbose))
+                v = write_file(args.output_verbose, args.gz_output)
+            except (IOError, OSError, PermissionError) as e:
+                log.error('Cannot open verbose output file "{}": {}'.format(args.output_verbose, e))
+                sys.exit(1)
 
         # Run the main loop (reclassification)
         main_loop(f, tax_reads_dict, taxonomy_tree, args, report_frequency, taxa_lineages, paired_input, verbose_input, o, v)

@@ -5,7 +5,7 @@ setup(
     name="StringMeUp",
     version=__version__,
     url="https://github.com/danisven/stringmeup",
-    description="A post-processing tool to reclassify Kraken 2 output based on the confidence score and/or minimum minimizer hit groups.",
+    description="A post-processing tool for reclassifying Kraken 2 output using different confidence score thresholds and minimum minimizer hit group filtering.",
     license="MIT",
 
     # Author details
@@ -20,7 +20,4 @@ setup(
         ],
     install_requires=['dataclasses'],
     packages=find_packages(exclude=['contrib', 'docs', 'test*'], include=['stringmeup']),
-    entry_points={'console_scripts': [  'stringmeup=stringmeup.stringmeup:stringmeup',
-#                                        'kraken2-taxonomy=kraken2_confidence_recal.taxonomy:main',
-
-]})
+    entry_points={'console_scripts': ['stringmeup=stringmeup.stringmeup:stringmeup']})
