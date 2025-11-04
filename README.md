@@ -1,8 +1,8 @@
 # StringMeUp Test Suite
 
-**Comprehensive, production-ready test suite** with **183 tests** organized into **unit**, **integration**, and **end-to-end** layers.
+Test suite with 184 tests organized into unit, integration, and end-to-end layers.
 
-Special focus on verifying the critical **v0.2.0 bug fix** for ambiguous k-mer handling.
+Includes verification of the v0.2.0 bug fix for ambiguous k-mer handling.
 
 ## Quick Start
 
@@ -10,7 +10,7 @@ Special focus on verifying the critical **v0.2.0 bug fix** for ambiguous k-mer h
 # Install pytest
 pip install pytest pytest-cov
 
-# Run all tests (183 tests: 180 passed, 3 skipped)
+# Run all tests
 pytest
 
 # Run with coverage
@@ -28,9 +28,9 @@ pytest -k "ambiguous"
 pytest -v -s
 ```
 
-## 🐛 NEW: Bugs Found & Fixed During Test Suite Completion
+## Bugs Found & Fixed During Test Suite Development
 
-**Two critical bugs discovered and fixed while achieving 100% test pass rate:**
+Two bugs discovered and fixed during test suite development:
 
 ### Bug #1: is_paired_input() Wrong Field Index
 - **Impact**: Paired-end files were NEVER detected as paired-end
@@ -44,15 +44,13 @@ pytest -v -s
 - **Fix**: Check length is integer, verify k-mer string has "|:|" delimiter
 - **File**: `stringmeup/stringmeup.py:88`
 
-**See**: `BUG_FIX_is_paired_input.md` for complete details
-
-**Result**: Paired-end processing now works correctly! ✅
+Result: Paired-end processing now functions correctly.
 
 ## Test Suite Overview
 
 ### Test Statistics
 
-**Total: 184 tests** (all passing, 0 skipped) ✅
+Total: 184 tests (all passing)
 
 | Test Layer | Tests | Purpose |
 |------------|-------|---------|
@@ -72,13 +70,13 @@ tests/
 │   └── test_dataclasses.py               (18 tests)
 │
 ├── integration/             # 66 integration tests
-│   ├── test_reclassification.py          (14 tests) ⭐ CRITICAL
+│   ├── test_reclassification.py          (14 tests)
 │   ├── test_reports.py                   (12 tests)
-│   ├── test_file_io.py                   (23 tests) 🐛 +1 test for paired bug fix
+│   ├── test_file_io.py                   (23 tests)
 │   └── test_error_handling.py            (17 tests)
 │
 ├── e2e/                     # 9 end-to-end tests
-│   └── test_workflow.py                  (9 tests, all passing) ✅
+│   └── test_workflow.py                  (9 tests)
 │
 └── fixtures/                # Test data and helpers
     ├── toy_taxonomy.py      # Minimal taxonomy for testing
@@ -89,7 +87,7 @@ tests/
 
 ## Test Layers Explained
 
-### 🔬 Unit Tests (109 tests)
+### Unit Tests (109 tests)
 
 **Purpose**: Test individual functions in isolation. Verify v0.2.0 bug fix.
 
@@ -100,19 +98,19 @@ tests/
 - Helper functions
 - Edge cases and malformed input
 
-**Key Tests**:
-- ⭐ `test_bug_fix_ambiguous_counted` - Verifies ambiguous counted
-- ⭐ `test_confidence_with_10_percent_ambiguous` - Core bug fix scenario
-- ⭐ `test_confidence_threshold_crossing` - Classification impact
+Key tests:
+- `test_bug_fix_ambiguous_counted` - Verifies ambiguous counted
+- `test_confidence_with_10_percent_ambiguous` - Core bug fix scenario
+- `test_confidence_threshold_crossing` - Classification impact
 
 **Run**: `pytest tests/unit/`
 
-### 🔗 Integration Tests (65 tests)
+### Integration Tests (66 tests)
 
-**Purpose**: Test components working together with **real taxonomy tree**.
+**Purpose**: Test components working together with real taxonomy tree.
 
 **What's Tested**:
-- **Reclassification** (14 tests) - ⭐ **CRITICAL**: First tests using real taxonomy!
+- **Reclassification** (14 tests) - Tests using real taxonomy
   - Walking up taxonomy tree
   - Confidence at each level
   - Ambiguous k-mers with real tree
@@ -124,7 +122,7 @@ tests/
   - Clade count accumulation (DFS)
   - Percentage calculations
 
-- **File I/O** (22 tests, 1 skip)
+- **File I/O** (23 tests)
   - Reading/writing Kraken2 files
   - Gzip support
   - Paired-end format detection
@@ -138,7 +136,7 @@ tests/
 
 **Run**: `pytest tests/integration/`
 
-### 🚀 End-to-End Tests (9 tests, all passing)
+### End-to-End Tests (9 tests)
 
 **Purpose**: Test complete workflow from input files to output files.
 
@@ -146,7 +144,7 @@ tests/
 - Complete reclassification workflow
 - Different confidence thresholds
 - Report generation after processing
-- Paired-end workflow (🐛 **bug fixed!**)
+- Paired-end workflow
 - Verbose output format
 - Gzipped file I/O
 - Output format compatibility
@@ -154,7 +152,7 @@ tests/
 
 **Run**: `pytest tests/e2e/`
 
-## Critical v0.2.0 Bug Fix Tests
+## v0.2.0 Bug Fix Tests
 
 ### The Bug
 
@@ -170,13 +168,13 @@ OLD (buggy):  confidence = 60 / 90  = 0.667
 NEW (correct): confidence = 60 / 100 = 0.60
 
 With threshold=0.65:
-  OLD: 0.667 ≥ 0.65 → PASSES (stays at species) ❌ WRONG
-  NEW: 0.60 < 0.65  → FAILS (moves up tree)   ✅ CORRECT
+  OLD: 0.667 ≥ 0.65 → PASSES (stays at species) - incorrect
+  NEW: 0.60 < 0.65  → FAILS (moves up tree) - correct
 ```
 
-### Must-Pass Regression Tests
+### Regression Tests
 
-These tests **MUST** pass to ensure the bug is fixed:
+Tests that verify the bug fix:
 
 1. **Unit Layer** (test_kmer_processing.py):
    - `test_bug_fix_ambiguous_counted` - Verifies ambiguous returned
@@ -188,8 +186,8 @@ These tests **MUST** pass to ensure the bug is fixed:
    - `test_bug_fix_impact_table` - Impact across ambiguous percentages
 
 3. **Integration Layer** (test_reclassification.py):
-   - ⭐ `test_ambiguous_included_in_total` - **CRITICAL**: Tests bug fix with real taxonomy
-   - ⭐ `test_threshold_crossing_due_to_ambiguous` - Real-world impact demonstration
+   - `test_ambiguous_included_in_total` - Tests bug fix with real taxonomy
+   - `test_threshold_crossing_due_to_ambiguous` - Real-world impact demonstration
 
 ### Run All Regression Tests
 
@@ -197,23 +195,17 @@ These tests **MUST** pass to ensure the bug is fixed:
 pytest -k "bug_fix or ambiguous" -v
 ```
 
-## NEW: Integration Tests with Real Taxonomy
+## Integration Tests with Real Taxonomy
 
-**MAJOR ACHIEVEMENT**: Before this test suite expansion, there were **ZERO tests** using a real taxonomy tree!
+The test suite includes integration tests using a real taxonomy tree. The original 109 tests were unit tests that tested individual functions in isolation without testing the complete workflow with an actual taxonomy tree.
 
-### What This Means
+### Integration Test Implementation
 
-The original 109 tests were excellent unit tests, but they tested individual functions without testing the **complete workflow** with an actual taxonomy tree.
-
-**Analogy**: "Testing every bolt on a car but never testing if the car drives"
-
-### What We Added
-
-**14 critical integration tests** (`test_reclassification.py`) that:
-- Use a **real 5-node taxonomy tree** (toy_taxonomy fixture)
+14 integration tests (`test_reclassification.py`) that:
+- Use a real 5-node taxonomy tree (toy_taxonomy fixture)
 - Test actual tree traversal (562 → 561 → 1224 → 2 → 1)
 - Verify confidence calculations at each taxonomic level
-- Test the v0.2.0 bug fix **with real taxonomy**
+- Test the v0.2.0 bug fix with real taxonomy
 
 **Example Test**:
 ```python
@@ -234,7 +226,7 @@ def test_low_confidence_moves_up_tree(self, toy_taxonomy):
     reclassified, _ = reclassify_read(
         read=read,
         confidence_threshold=0.5,
-        taxonomy_tree=toy_taxonomy,  # REAL TAXONOMY!
+        taxonomy_tree=toy_taxonomy,  # Real taxonomy tree
         # ...
     )
 
@@ -242,13 +234,13 @@ def test_low_confidence_moves_up_tree(self, toy_taxonomy):
     assert reclassified.reclassified_taxid in lineage
 ```
 
-This is a **game-changer** for confidence in production readiness!
+These tests provide verification of the complete reclassification workflow.
 
 ## Test Fixtures
 
 ### Toy Taxonomy
 
-**File**: `fixtures/toy_taxonomy.py`
+**File**: `tests/fixtures/toy_taxonomy.py`
 
 **Purpose**: Minimal but realistic taxonomy for testing
 
@@ -283,7 +275,7 @@ This is a **game-changer** for confidence in production readiness!
 - 10%, 20%, 50%, 100% ambiguous scenarios
 - Threshold crossing examples
 
-See `fixtures/README.md` for detailed documentation.
+See `tests/fixtures/README.md` for detailed documentation.
 
 ## Running Specific Test Categories
 
@@ -296,7 +288,7 @@ pytest tests/e2e/
 # Run specific integration test file
 pytest tests/integration/test_reclassification.py -v
 
-# Run critical reclassification tests
+# Run specific reclassification tests
 pytest tests/integration/test_reclassification.py::TestReclassificationWithAmbiguous -v
 
 # Run all ambiguous-related tests across all layers
@@ -322,7 +314,7 @@ Current coverage: **~24% overall** (more for core stringmeup.py)
 
 ## Error Handling Tests
 
-**New**: 17 tests documenting error behavior
+The test suite includes 17 tests documenting error behavior.
 
 Tests verify handling of:
 - Missing taxonomy nodes (raises KeyError - **expected**)
@@ -331,7 +323,7 @@ Tests verify handling of:
 - Paired-end edge cases
 - Numerical edge cases (large reads, precision)
 
-These tests **document actual behavior**, not just ideal behavior.
+These tests document actual behavior, including expected error conditions.
 
 ## Known Limitations (Documented in Tests)
 
@@ -368,12 +360,12 @@ Run these tests:
    - Integration test with real taxonomy (if applicable)
    - End-to-end test for user-facing features
 
-2. Ensure critical regression tests still pass:
+2. Ensure regression tests still pass:
    ```bash
    pytest -k "bug_fix" -v
    ```
 
-3. Add fixtures if needed to `fixtures/`
+3. Add fixtures if needed to `tests/fixtures/`
 
 4. Update this README
 
@@ -391,15 +383,15 @@ Run these tests:
 ### When Taxonomy Structure Changes
 
 If you modify the toy taxonomy:
-1. Update `fixtures/toy_taxonomy.py`
+1. Update `tests/fixtures/toy_taxonomy.py`
 2. Run integration tests: `pytest tests/integration/ -v`
 3. Update expected values in tests
-4. Update `fixtures/README.md`
+4. Update `tests/fixtures/README.md`
 
 ### When Kraken2 Format Changes
 
 If Kraken2 output format changes:
-1. Update example files in `fixtures/`
+1. Update example files in `tests/fixtures/`
 2. Update parsing tests in `test_file_io.py`
 3. Verify all layers still work
 
@@ -411,22 +403,16 @@ If you add new confidence algorithms:
 3. Add comparison tests vs. current algorithm
 4. Document expected behavior differences
 
-## Questions?
+## Additional Documentation
 
-- **Bug fix details**: See CLAUDE.md
-- **Taxonomy structure**: See `fixtures/README.md`
-- **Main README**: See ../README.md
+- **Taxonomy structure**: See `tests/fixtures/README.md`
 - **Test failures**: Check test docstrings for expected behavior
 
 ## Test Development Timeline
 
-- **Original**: 109 unit tests (excellent foundation)
-- **Critical finding**: ZERO tests with real taxonomy
-- **Phase 1**: Added toy taxonomy fixture
-- **Phase 2**: Added 48 integration tests (reclassification, reports, file I/O, error handling)
-- **Phase 3**: Added 9 end-to-end workflow tests
-- **Phase 4**: Reorganized into unit/integration/e2e structure
-- **Final**: 183 tests (68% increase) with comprehensive coverage
-
-**Before**: Testing individual bolts
-**Now**: Testing the whole car **driving** ✅
+- **Original**: 109 unit tests
+- Added toy taxonomy fixture
+- Added 66 integration tests (reclassification, reports, file I/O, error handling)
+- Added 9 end-to-end workflow tests
+- Reorganized into unit/integration/e2e structure
+- **Current**: 184 tests total
